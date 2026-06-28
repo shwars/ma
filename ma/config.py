@@ -113,14 +113,16 @@ def _load_models(raw_models: list[Any], folder_id: str) -> list[ModelChoice]:
         if isinstance(item, str):
             model_uri = _substitute_folder_id(item, folder_id)
             display_name = item.split("/")[-2] if "/" in item else item
-            model_id = display_name.lower().replace(" ", "-")
+            model_id = _unique_model_choice_id(model_uri)
         else:
             model_uri = item.get("model_id") or item.get("model_uri") or item.get("model") or ""
             model_uri = _substitute_folder_id(model_uri, folder_id)
             display_name = item.get("display_name") or item.get("name") or model_uri
-            model_id = _substitute_folder_id(item.get("id") or display_name.lower().replace(" ", "-"), folder_id)
+            model_id = _substitute_folder_id(item.get("id") or _unique_model_choice_id(model_uri), folder_id)
 
         if not model_uri:
+            continue
+        if not supports_responses_api(model_uri):
             continue
         models.append(ModelChoice(id=model_id or f"model-{index}", display_name=display_name, model_uri=model_uri))
 
@@ -139,9 +141,28 @@ def _substitute_folder_id(value: Any, folder_id: str) -> str:
     return str(value or "").replace("%folder_id%", folder_id)
 
 
+def supports_responses_api(model_uri: str) -> bool:
+    return model_uri.startswith("gpt://")
+
+
 def _model_choice_id(model_id: str) -> str:
-    return model_id.rstrip("/").split("/")[-1]
+    return _unique_model_choice_id(model_id)
 
 
 def _model_display_name(model_id: str) -> str:
-    return _model_choice_id(model_id).replace("-", " ").replace("_", " ").title()
+    parts = [part for part in model_id.rstrip("/").split("/") if part]
+    if parts and parts[-1] == "latest" and len(parts) >= 2:
+        name = parts[-2]
+    else:
+        name = parts[-1] if parts else model_id
+    return name.replace("-", " ").replace("_", " ").title()
+
+
+def _unique_model_choice_id(model_id: str) -> str:
+    return (
+        model_id.strip()
+        .replace("://", "-")
+        .replace("/", "-")
+        .replace(":", "-")
+        .replace("%", "")
+    )

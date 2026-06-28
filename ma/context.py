@@ -12,6 +12,7 @@ class AgentContext:
     config: AppConfig
     selected_model: ModelChoice | None
     model: Any
+    reasoning_level: str | None
     folder_id: str
     api_key: str
     notes_store: NotesStore

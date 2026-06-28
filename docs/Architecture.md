@@ -49,6 +49,7 @@ Agents receive an `AgentContext` with:
 - `config`
 - `selected_model`
 - `model`
+- `reasoning_level`
 - `folder_id`
 - `api_key`
 - `notes_store`
@@ -57,6 +58,8 @@ Agents receive an `AgentContext` with:
 - `todo_tools`
 
 Only the root `agent.model` is automatically overridden before a run. If an agent owns subagents, `set_context` should update them.
+
+When a reasoning level is selected for the current model, `ma` applies it to the root agent's `model_settings.reasoning` before running. `Agent Default` leaves the agent's own reasoning settings untouched.
 
 ## Configuration
 
@@ -70,7 +73,7 @@ Only the root `agent.model` is automatically overridden before a run. If an agen
 
 Models can be configured with `model_id`, `model_uri`, or `model`. `model_id` is preferred in examples. Any `%folder_id%` placeholder in configured model IDs is replaced after credentials are resolved.
 
-When `config.json` is missing and both credentials are available, `ma` queries Yandex Cloud's OpenAI-compatible models endpoint and uses the returned model IDs in `/model`.
+When `config.json` is missing and both credentials are available, `ma` queries Yandex Cloud's OpenAI-compatible models endpoint and uses the returned model IDs in `/model`. Only Responses-compatible text models with the `gpt://` scheme are shown in the model selector.
 
 The first model option is always `Agent Default`. Selecting it means `ma` does not inject a model into the root agent, so the agent file is responsible for choosing its own model.
 
@@ -101,5 +104,7 @@ It displays:
 - raw text deltas as assistant output
 - run item events as tool-call/tool-output status lines
 - agent update events as handoff status lines
+
+Assistant text is streamed as plain text inside the active output block. When the block ends, either before a tool/agent event or at run completion, `ma` finalizes the whole block as Markdown so tables, code fences, lists, and other multi-token Markdown constructs render consistently.
 
 After a run, the app stores `result.to_input_list()` when available so future turns preserve SDK conversation history.

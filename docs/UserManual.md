@@ -29,6 +29,8 @@ Credential priority is:
 
 Copy `config.example.json` to `config.json` only when you want to customize the model list or put credentials in config. If `config.json` is missing and credentials are available, `ma` asks the Yandex Cloud OpenAI-compatible models endpoint for available models.
 
+The model selector shows only Responses-compatible text models using the `gpt://` scheme. Non-text models returned by the API or listed in config are filtered out.
+
 Model IDs can use `%folder_id%`, which is replaced at load time:
 
 ```json
@@ -55,9 +57,14 @@ uv run ma
 
 - `/agent` opens the agent selector.
 - `/model` opens the model selector.
+- `/reasoning` opens the reasoning selector for the current model.
+- `/reasoning low`, `/reasoning medium`, and similar direct forms update reasoning without opening the selector.
 - `/reload` reloads agents from disk.
 - `/notes save` saves current notes to a markdown file.
 - `/notes clear` clears current notes.
+- `/exit` exits the app.
+
+The command palette exposes the same main app commands: Agent, Model, Reasoning, Reload, Notes Save, Notes Clear, and Exit.
 
 ## Built-In Agents
 
@@ -65,6 +72,10 @@ uv run ma
 - `deep_research`: a research assistant that uses web search, notes, and TODOs.
 
 When the active agent uses notes or TODOs, the right pane shows that state live during the chat.
+Notes and TODOs are displayed in separate panes. If only one pane is enabled for the selected agent, it uses the full right-side height.
+Notes show one `category - title` row per note; select a note row and press Enter to open the full note.
+TODOs show one item per line with `☐` for pending items and light-green `☑` rows for done items. Long TODOs do not wrap; use the bottom horizontal scrollbar to read them.
+The message composer spans the full width of the app. Press Enter to send and Ctrl+Enter to insert a new line.
 
 ## Creating An Agent
 

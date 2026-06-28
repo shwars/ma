@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from ma.config import AGENT_DEFAULT_MODEL_ID, load_config, load_dotenv
+from ma.config import AGENT_DEFAULT_MODEL_ID, load_config, load_dotenv, supports_responses_api
 
 
 def clear_credential_env(monkeypatch):
@@ -143,6 +143,70 @@ def test_load_config_queries_models_api_when_config_file_is_missing(tmp_path, mo
     assert config.models[0].display_name == "Agent Default"
     assert config.models[1].id == "remote-model"
     assert config.models[1].model_uri == "gpt://folder-from-env/remote/latest"
+
+
+def test_api_discovered_latest_models_get_unique_picker_ids(tmp_path, monkeypatch):
+    clear_credential_env(monkeypatch)
+    monkeypatch.setenv("YANDEX_FOLDER_ID", "folder-from-env")
+    monkeypatch.setenv("YANDEX_API_KEY", "key-from-env")
+
+    config = load_config(
+        tmp_path / "missing.json",
+        model_fetcher=lambda folder_id, api_key: [
+            {"display_name": "First", "model_id": "gpt://folder-from-env/first/latest"},
+            {"display_name": "Second", "model_id": "gpt://folder-from-env/second/latest"},
+        ],
+    )
+
+    model_ids = [model.id for model in config.models]
+    assert len(model_ids) == len(set(model_ids))
+    assert config.models[1].id == "gpt-folder-from-env-first-latest"
+    assert config.models[2].id == "gpt-folder-from-env-second-latest"
+
+
+def test_model_filter_keeps_only_responses_compatible_gpt_models(tmp_path, monkeypatch):
+    clear_credential_env(monkeypatch)
+    monkeypatch.setenv("YANDEX_FOLDER_ID", "folder-from-env")
+    monkeypatch.setenv("YANDEX_API_KEY", "key-from-env")
+
+    config = load_config(
+        tmp_path / "missing.json",
+        model_fetcher=lambda folder_id, api_key: [
+            {"display_name": "Text", "model_id": "gpt://folder/text/latest"},
+            {"display_name": "Image", "model_id": "art://folder/yandex-art/latest"},
+            {"display_name": "Realtime", "model_id": "realtime://folder/speech/latest"},
+        ],
+    )
+
+    assert [model.display_name for model in config.models] == ["Agent Default", "Text"]
+
+
+def test_configured_non_gpt_models_are_filtered_out(tmp_path, monkeypatch):
+    clear_credential_env(monkeypatch)
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "folder_id": "folder",
+                "api_key": "key",
+                "models": [
+                    {"display_name": "Text", "model_id": "gpt://folder/text/latest"},
+                    {"display_name": "Image", "model_id": "art://folder/yandex-art/latest"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert [model.display_name for model in config.models] == ["Agent Default", "Text"]
+
+
+def test_supports_responses_api_accepts_only_gpt_scheme():
+    assert supports_responses_api("gpt://folder/model/latest") is True
+    assert supports_responses_api("art://folder/model/latest") is False
+    assert supports_responses_api("realtime://folder/model/latest") is False
 
 
 def test_load_config_does_not_query_models_api_when_config_file_exists(tmp_path, monkeypatch):

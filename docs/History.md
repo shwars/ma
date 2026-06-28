@@ -9,3 +9,7 @@
 - Added optional `set_context(context)` and `get_props()` hooks for host-provided tools and UI metadata.
 - Made notes and TODOs session-scoped. Persistence is explicit through `/notes save`.
 - Imported local agent modules by file path to avoid a name collision with the SDK package named `agents`.
+- Added `/exit`, `/reasoning`, app command palette entries, color-coded transcript lines without role labels, and whitespace filtering for empty streamed output.
+- Split notes and TODOs into separate panes, added selectable note detail modal, and moved input to a full-width multiline composer.
+- Changed streamed assistant rendering to show plain text while deltas arrive, then finalize each completed assistant block as Markdown.
+- Improved TODO pane rendering with no-wrap rows, horizontal scrolling, Unicode checkbox markers, and light-green completed items.
