@@ -158,6 +158,13 @@ def code_interpreter_logs(raw: Any) -> str:
     return "\n".join(lines)
 
 
+def reasoning_delta_text(event: Any) -> str:
+    event_type = str(getattr(event, "type", "")).lower()
+    if "reasoning" not in event_type or not event_type.endswith(".delta"):
+        return ""
+    return str(getattr(event, "delta", ""))
+
+
 def is_reasoning_item(item: Any) -> bool:
     item_type = str(getattr(item, "type", "")).lower()
     raw_type = str(getattr(getattr(item, "raw_item", None), "type", "")).lower()
@@ -410,6 +417,26 @@ class AssistantBlock:
             self.widget.update(RichMarkdown(self.text))
 
 
+class ReasoningBlock:
+    def __init__(self) -> None:
+        self.widget = Static("", classes="reasoning-message")
+        self.parts: list[str] = []
+
+    @property
+    def text(self) -> str:
+        return "".join(self.parts)
+
+    async def mount(self, parent: VerticalScroll) -> None:
+        await parent.mount(self.widget)
+
+    def append(self, delta: str) -> None:
+        self.parts.append(delta)
+        text = Text()
+        text.append("Reasoning\n", style="bold dodger_blue1")
+        text.append(self.text, style="dodger_blue1")
+        self.widget.update(text)
+
+
 def render_todo_items(items: list[TodoItem]) -> Text:
     todos = Text(no_wrap=True)
     for index, item in enumerate(items):
@@ -479,6 +506,10 @@ class MaApp(App[None]):
     CSS = """
     Screen {
         layout: vertical;
+    }
+
+    PickerScreen, NoteDetailScreen, HelpScreen, ClarificationScreen, DownloadFilesScreen {
+        align: center middle;
     }
 
     #status-header {
@@ -558,6 +589,11 @@ class MaApp(App[None]):
 
     .assistant-message {
         color: white;
+        margin-bottom: 1;
+    }
+
+    .reasoning-message {
+        color: dodgerblue;
         margin-bottom: 1;
     }
 
@@ -1086,7 +1122,7 @@ class MaApp(App[None]):
         yield SystemCommand("Notes Clear", "Clear session notes", self.action_clear_notes)
         yield SystemCommand("Exit", "Exit the application", self.action_quit)
         for command in super().get_system_commands(screen):
-            if command.title != "Quit":
+            if command.title not in {"Quit", "Theme", "Change Theme"}:
                 yield command
 
     def save_notes(self) -> None:
@@ -1126,6 +1162,7 @@ class MaApp(App[None]):
             run_input = self.history + [{"role": "user", "content": text}]
             assistant_text_parts: list[str] = []
             current_assistant_block: AssistantBlock | None = None
+            current_reasoning_block: ReasoningBlock | None = None
 
             from agents import Runner
 
@@ -1134,6 +1171,7 @@ class MaApp(App[None]):
                 if stream_event.type == "raw_response_event" and isinstance(
                     stream_event.data, ResponseTextDeltaEvent
                 ):
+                    current_reasoning_block = None
                     delta = getattr(stream_event.data, "delta", "")
                     if delta and (current_assistant_block is not None or delta.strip()):
                         if current_assistant_block is None:
@@ -1142,10 +1180,22 @@ class MaApp(App[None]):
                         current_assistant_block.append(delta)
                         assistant_text_parts.append(delta)
                         transcript.scroll_end(animate=False)
+                elif stream_event.type == "raw_response_event":
+                    delta = reasoning_delta_text(stream_event.data)
+                    if delta and (current_reasoning_block is not None or delta.strip()):
+                        if current_assistant_block is not None:
+                            current_assistant_block.finalize()
+                            current_assistant_block = None
+                        if current_reasoning_block is None:
+                            current_reasoning_block = ReasoningBlock()
+                            await current_reasoning_block.mount(transcript)
+                        current_reasoning_block.append(delta)
+                        transcript.scroll_end(animate=False)
                 elif stream_event.type == "run_item_stream_event":
                     if current_assistant_block is not None:
                         current_assistant_block.finalize()
                         current_assistant_block = None
+                    current_reasoning_block = None
                     if self.render_code_interpreter_item(stream_event.item):
                         await self.handle_code_interpreter_files([stream_event.item])
                     else:
@@ -1157,6 +1207,7 @@ class MaApp(App[None]):
                     if current_assistant_block is not None:
                         current_assistant_block.finalize()
                         current_assistant_block = None
+                    current_reasoning_block = None
                     self.add_event(f"Agent: {stream_event.new_agent.name}")
 
             if current_assistant_block is not None:

@@ -17,8 +17,10 @@ from ma.app import (
     DownloadResult,
     HelpScreen,
     MaApp,
+    ReasoningBlock,
     collect_output_files,
     complete_command_text,
+    reasoning_delta_text,
     reasoning_item_text,
     render_command_hint,
     render_todo_items,
@@ -211,6 +213,17 @@ def test_palette_has_single_download_command():
     asyncio.run(run())
 
 
+def test_palette_has_single_theme_command():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            titles = [command.title for command in pilot.app.get_system_commands(pilot.app.screen)]
+
+            assert titles.count("Theme") == 1
+            assert "Change Theme" not in titles
+
+    asyncio.run(run())
+
+
 def test_new_command_resets_current_session_state():
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:
@@ -242,6 +255,20 @@ def test_help_command_opens_help_screen():
 
             assert isinstance(pilot.app.screen, HelpScreen)
             assert "/agent [name]" in str(pilot.app.screen.query_one("#help-body", Static).content)
+
+    asyncio.run(run())
+
+
+def test_modal_screens_are_centered():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            await pilot.app.handle_command("/help")
+            await pilot.pause()
+
+            styles = pilot.app.screen.styles
+
+            assert styles.align_horizontal == "center"
+            assert styles.align_vertical == "middle"
 
     asyncio.run(run())
 
@@ -331,6 +358,30 @@ def test_assistant_blocks_finalize_before_events_and_restart_after():
             assert isinstance(children[event_index + 1].content, RichMarkdown)
 
     asyncio.run(run())
+
+
+def test_reasoning_block_streams_text_as_it_arrives():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            transcript = pilot.app.query_one("#transcript")
+            block = ReasoningBlock()
+            await block.mount(transcript)
+
+            block.append("First ")
+            block.append("thought")
+
+            assert isinstance(block.widget.content, Text)
+            assert block.widget.content.plain == "Reasoning\nFirst thought"
+
+    asyncio.run(run())
+
+
+def test_reasoning_delta_text_detects_reasoning_delta_events():
+    event = SimpleNamespace(type="response.reasoning_summary_text.delta", delta="thinking")
+    other = SimpleNamespace(type="response.output_text.delta", delta="answer")
+
+    assert reasoning_delta_text(event) == "thinking"
+    assert reasoning_delta_text(other) == ""
 
 
 def test_agent_log_renders_light_green_message():
@@ -479,6 +530,10 @@ def test_status_header_displays_agent_status_and_metadata():
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:
             app = pilot.app
+            for _ in range(10):
+                await pilot.pause()
+                if not app.starting:
+                    break
             app.active_agent = LoadedAgent(
                 name="sample",
                 module=ModuleType("sample"),

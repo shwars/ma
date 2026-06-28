@@ -100,6 +100,8 @@ The transcript initially mounts a lightweight splash screen and keeps the compos
 
 The top status line shows the active agent, active model, download mode, and current status. Status values are color-coded: Ready is white, Working is light green, Needs input is blue, and Executing code is yellow.
 
+Modal screens are explicitly centered in Textual CSS so selectors, help, clarification, note detail, and download confirmation appear over the middle of the app.
+
 The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types. Completion candidates are dynamic: built-in commands plus loaded agent names/display names, configured model IDs/display names, and Textual theme names.
 
 `/new` starts a fresh chat session by clearing conversation history, session notes/TODOs, transcript widgets, and downloaded Code Interpreter file tracking. It keeps the selected agent, model, and reasoning settings.
@@ -137,6 +139,7 @@ The UI calls `Runner.run_streamed(active_agent.agent, input_items)`.
 It displays:
 
 - raw text deltas as assistant output
+- reasoning text/summary deltas as a live reasoning block
 - run item events as tool-call/tool-output status lines
 - reasoning items as reasoning status lines when the provider includes reasoning summaries or text
 - agent update events as handoff status lines

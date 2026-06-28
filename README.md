@@ -7,6 +7,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Dynamic agents loaded from `agents/<name>/main.py`
 - Streaming terminal chat UI
 - Markdown formatting after each streamed assistant block completes
+- Streaming reasoning output when the provider emits reasoning deltas
 - Yandex Cloud OpenAI-compatible model runtime
 - Commands for agent/model selection, reload, and notes
 - Code Interpreter output display with generated-file download controls
@@ -77,7 +78,7 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 - `/agent [name]` selects the active agent, or opens the selector when no name is given.
 - `/model [model]` selects the active model, or opens the selector when no model is given.
 - `/reasoning` selects the reasoning effort for the current model.
-- `/theme [name]` selects a Textual UI theme, or opens the selector when no theme is given.
+- `/theme [name]` selects a Textual UI theme, or opens the centered selector when no theme is given.
 - `/download auto`, `/download ask`, `/download skip` controls Code Interpreter generated-file downloads. Default is `ask`.
 - `/new` starts a new chat session and clears session state.
 - `/help` opens the command help window.

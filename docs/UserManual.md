@@ -61,7 +61,7 @@ uv run ma
 - `/model <model>` switches directly to a model by ID or display name.
 - `/reasoning` opens the reasoning selector for the current model.
 - `/reasoning low`, `/reasoning medium`, and similar direct forms update reasoning without opening the selector.
-- `/theme` opens the UI theme selector.
+- `/theme` opens the centered UI theme selector.
 - `/theme <name>` switches directly to a Textual theme such as `nord`, `gruvbox`, or `textual-dark`.
 - `/download` opens the download-mode selector.
 - `/download auto` downloads Code Interpreter generated files automatically.
@@ -78,6 +78,7 @@ The command palette exposes the same main app commands: Agent, Model, Reasoning,
 When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names, model names, and theme names.
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
 The top status line shows the active agent/model plus current run status: Ready, Working, Needs input, or Executing code.
+Modal windows such as Help, selection pickers, clarification prompts, and download confirmation appear centered over the app.
 
 ## Built-In Agents
 

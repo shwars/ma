@@ -28,3 +28,5 @@
 - Moved sync/async OpenAI-compatible Yandex clients into `AgentContext` so agents can reuse host clients instead of recreating them.
 - Added `/theme` with direct selection, picker selection, palette access, and Tab completion for Textual theme names.
 - Render reasoning stream items with extracted reasoning text/summaries instead of generic event labels.
+- Centered modal windows and filtered Textual's built-in theme command so the palette shows one Theme entry.
+- Added live streaming for reasoning text/summary deltas when models emit them.
