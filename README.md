@@ -10,6 +10,8 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Yandex Cloud OpenAI-compatible model runtime
 - Commands for agent/model selection, reload, and notes
 - Command palette entries matching the main slash commands
+- Tab completion and muted live hints for slash commands
+- Startup splash screen while agents and models initialize
 - Session-scoped notes and TODO tools for agents
 - Optional separate notes/TODO side panes controlled by each agent's `get_props()`
 - Full-width two-line composer with Ctrl+Enter for new lines
@@ -76,6 +78,8 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 - `/notes save` saves session notes to a markdown file.
 - `/notes clear` clears session notes.
 - `/exit` exits the app.
+
+While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer.
 
 ## Built-In Agents
 

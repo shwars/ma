@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -30,6 +31,23 @@ REASONING_CHOICES: list[tuple[str, str]] = [
     ("medium", "Medium"),
     ("high", "High"),
     ("xhigh", "Extra High"),
+]
+
+COMMAND_COMPLETIONS = [
+    "/agent",
+    "/model",
+    "/reasoning",
+    "/reasoning agent_default",
+    "/reasoning none",
+    "/reasoning minimal",
+    "/reasoning low",
+    "/reasoning medium",
+    "/reasoning high",
+    "/reasoning xhigh",
+    "/reload",
+    "/notes save",
+    "/notes clear",
+    "/exit",
 ]
 
 
@@ -81,6 +99,11 @@ class NoteDetailScreen(ModalScreen[None]):
 
 class ComposerTextArea(TextArea):
     async def _on_key(self, event) -> None:
+        if event.key == "tab":
+            event.stop()
+            event.prevent_default()
+            self.app.complete_command()
+            return
         if event.key == "enter":
             event.stop()
             event.prevent_default()
@@ -132,6 +155,58 @@ def render_todo_items(items: list[TodoItem]) -> Text:
     return todos
 
 
+def command_completion_matches(text: str) -> list[str]:
+    if "\n" in text or not text.startswith("/"):
+        return []
+    return [command for command in COMMAND_COMPLETIONS if command.startswith(text.lower())]
+
+
+def complete_command_text(text: str) -> str:
+    matches = command_completion_matches(text)
+    if not matches:
+        return text
+    if len(matches) == 1:
+        return matches[0]
+    completion = commonprefix(matches)
+    return completion if len(completion) > len(text) else text
+
+
+def render_command_hint(text: str) -> Text:
+    hint = Text(style="dim")
+    matches = command_completion_matches(text)
+    if not matches:
+        return hint
+    if len(matches) == 1:
+        command = matches[0]
+        if command == text:
+            hint.append("Press Enter to run command")
+        else:
+            hint.append(text)
+            hint.append(command[len(text) :], style="dim italic")
+        return hint
+    hint.append("Tab: ")
+    hint.append("  ".join(matches[:5]))
+    if len(matches) > 5:
+        hint.append(f"  +{len(matches) - 5} more")
+    return hint
+
+
+def startup_splash() -> Text:
+    art = r"""
+              _   _              ___
+             μ μ μ μ            / _ \
+            μ   μ   μ          / /_\ \
+           μ    μ    μ        /  _  \
+          μ     μ     μ      /_/   \_\
+
+                 μA
+
+        (C) 2026 Dmitry Soshnikov
+        (C) 2026 SHWARSICO Vibe Coding Dept
+    """
+    return Text(art.strip("\n"), style="bold cyan")
+
+
 class MaApp(App[None]):
     CSS = """
     Screen {
@@ -173,8 +248,29 @@ class MaApp(App[None]):
     }
 
     #composer {
+        display: none;
         height: 4;
         border: round $primary;
+    }
+
+    #composer.ready {
+        display: block;
+    }
+
+    #completion-hint {
+        display: none;
+        height: 1;
+        padding-left: 1;
+        color: $text-muted;
+    }
+
+    #completion-hint.visible {
+        display: block;
+    }
+
+    .startup-splash {
+        content-align: center middle;
+        height: 1fr;
     }
 
     .message {
@@ -256,6 +352,7 @@ class MaApp(App[None]):
         self.side_refresh_index = 0
         self.history: list[Any] = []
         self.busy = False
+        self.starting = True
 
     def _initial_model_choice(self) -> ModelChoice | None:
         return next(
@@ -267,27 +364,62 @@ class MaApp(App[None]):
         yield Header()
         with Horizontal(id="body"):
             with Vertical(id="main"):
-                yield VerticalScroll(id="transcript")
+                with VerticalScroll(id="transcript"):
+                    yield Static(startup_splash(), id="startup-splash", classes="startup-splash")
             with Vertical(id="side"):
                 yield VerticalScroll(id="notes-pane")
                 yield HorizontalScroll(id="todo-pane")
+        yield Static("", id="completion-hint")
         yield ComposerTextArea(
             "",
             placeholder="Message, or /agent /model /reasoning /reload /notes save /notes clear /exit",
             id="composer",
             show_line_numbers=False,
             soft_wrap=True,
+            disabled=True,
         )
         yield Footer()
 
     async def on_mount(self) -> None:
         self.title = "ma"
+        self.call_after_refresh(self.start_background_startup)
+
+    def start_background_startup(self) -> None:
+        self.run_worker(self.finish_startup(), exclusive=True)
+
+    async def finish_startup(self) -> None:
         self.notes_tools = build_notes_tools(self.notes_store)
         self.todo_tools = build_todo_tools(self.todo_store)
         self.selected_model_object = build_model(self.config, self.selected_model)
         await self.reload_agents()
         self.refresh_side()
-        self.query_one(ComposerTextArea).focus()
+        self.starting = False
+        splash = self.query("#startup-splash")
+        if splash:
+            splash.first().remove()
+        composer = self.query_one(ComposerTextArea)
+        composer.disabled = False
+        composer.add_class("ready")
+        composer.focus()
+
+    def complete_command(self) -> None:
+        composer = self.query_one("#composer", ComposerTextArea)
+        completed = complete_command_text(composer.text)
+        if completed != composer.text:
+            composer.load_text(completed)
+            composer.move_cursor((0, len(completed)))
+        self.update_command_hint()
+
+    def update_command_hint(self) -> None:
+        composer = self.query_one("#composer", ComposerTextArea)
+        hint_widget = self.query_one("#completion-hint", Static)
+        hint = render_command_hint(composer.text)
+        hint_widget.update(hint)
+        hint_widget.set_class(bool(hint.plain), "visible")
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if event.text_area.id == "composer":
+            self.update_command_hint()
 
     async def submit_composer(self) -> None:
         composer = self.query_one("#composer", TextArea)

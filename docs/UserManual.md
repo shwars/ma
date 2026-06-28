@@ -65,6 +65,8 @@ uv run ma
 - `/exit` exits the app.
 
 The command palette exposes the same main app commands: Agent, Model, Reasoning, Reload, Notes Save, Notes Clear, and Exit.
+When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix.
+On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
 
 ## Built-In Agents
 

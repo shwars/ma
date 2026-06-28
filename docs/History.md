@@ -13,3 +13,5 @@
 - Split notes and TODOs into separate panes, added selectable note detail modal, and moved input to a full-width multiline composer.
 - Changed streamed assistant rendering to show plain text while deltas arrive, then finalize each completed assistant block as Markdown.
 - Improved TODO pane rendering with no-wrap rows, horizontal scrolling, Unicode checkbox markers, and light-green completed items.
+- Added slash-command Tab completion with muted completion hints, plus a startup splash shown before background initialization finishes.
+- Changed startup so the composer stays hidden and disabled until initialization completes.

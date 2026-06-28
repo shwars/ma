@@ -77,6 +77,12 @@ When `config.json` is missing and both credentials are available, `ma` queries Y
 
 The first model option is always `Agent Default`. Selecting it means `ma` does not inject a model into the root agent, so the agent file is responsible for choosing its own model.
 
+## UI Lifecycle
+
+The transcript initially mounts a lightweight splash screen and keeps the composer hidden and unfocused. After Textual's first refresh, `ma` starts background initialization for model construction and agent loading, then removes the splash and focuses the composer when startup completes.
+
+The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types.
+
 ## Tools
 
 Notes tools:
