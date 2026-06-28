@@ -97,7 +97,12 @@ To use host-provided tools:
 
 ```python
 def set_context(context):
-    agent.tools = [*context.notes_tools, *context.todo_tools]
+    context.log("My Agent loaded.")
+    agent.tools = [
+        *context.notes_tools,
+        *context.todo_tools,
+        *context.clarification_tools,
+    ]
 
 
 def get_props():
@@ -111,3 +116,17 @@ def get_props():
 Run `/reload` after editing or adding an agent.
 
 The notes tool accepts `extra` as optional text metadata. Use JSON text there if you want to preserve several custom fields in one note.
+
+`context.log(message)` displays a light-green message in the transcript. It is a Python callback for agent code, not a model-callable tool by default.
+
+The clarification tool is available through `context.clarification_tools`. It exposes:
+
+```python
+ask_user_clarification(
+    question: str,
+    options: list[{"title": str, "detail": str}],
+    allow_custom_answer: bool = False,
+) -> {"title": str, "detail": str}
+```
+
+When called, `ma` opens a modal for the user. If `allow_custom_answer` is true, the user can choose `Own answer` and type custom text.

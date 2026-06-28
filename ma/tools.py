@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict
+
 from .stores import NotesStore, TodoStore
+
+
+class ClarificationOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    detail: str
 
 
 def build_notes_tools(store: NotesStore) -> list[Any]:
@@ -64,3 +74,38 @@ def build_todo_tools(store: TodoStore) -> list[Any]:
         return item.title if item else "No unfinished TODO items."
 
     return [create_todo, mark_todo_done, get_next_todo]
+
+
+ClarificationAsker = Callable[[str, list[dict[str, str]], bool], Awaitable[dict[str, str]]]
+
+
+def normalize_clarification_options(options: list[ClarificationOption | dict[str, str]]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for option in options:
+        if isinstance(option, ClarificationOption):
+            title = option.title.strip()
+            detail = option.detail.strip()
+        else:
+            title = str(option.get("title", "")).strip()
+            detail = str(option.get("detail", "")).strip()
+        if title:
+            normalized.append({"title": title, "detail": detail})
+    return normalized
+
+
+def build_clarification_tools(asker: ClarificationAsker) -> list[Any]:
+    from agents import function_tool
+
+    @function_tool
+    async def ask_user_clarification(
+        question: str,
+        options: list[ClarificationOption],
+        allow_custom_answer: bool = False,
+    ) -> dict[str, str]:
+        """Ask the user to choose from title/detail options, optionally allowing a custom answer."""
+        normalized_options = normalize_clarification_options(options)
+        if not normalized_options and not allow_custom_answer:
+            return {"title": "No options", "detail": "The agent did not provide clarification options."}
+        return await asker(question, normalized_options, allow_custom_answer)
+
+    return [ask_user_clarification]

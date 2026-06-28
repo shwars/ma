@@ -13,6 +13,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Tab completion and muted live hints for slash commands
 - Startup splash screen while agents and models initialize
 - Session-scoped notes and TODO tools for agents
+- Host logging and user-clarification integration tools for agents
 - Optional separate notes/TODO side panes controlled by each agent's `get_props()`
 - Full-width two-line composer with Ctrl+Enter for new lines
 
@@ -104,7 +105,12 @@ Agents can optionally receive host context and declare UI properties:
 
 ```python
 def set_context(context):
-    agent.tools = [*context.notes_tools, *context.todo_tools]
+    context.log("My Agent loaded.")
+    agent.tools = [
+        *context.notes_tools,
+        *context.todo_tools,
+        *context.clarification_tools,
+    ]
 
 
 def get_props():
@@ -116,6 +122,8 @@ def get_props():
 ```
 
 Run `/reload` after adding or editing an agent.
+
+`context.log(message)` writes a light-green message to the transcript. `context.clarification_tools` exposes `ask_user_clarification(question, options, allow_custom_answer=False)`, where each option has `title` and `detail`; it returns the selected `{title, detail}`.
 
 ## Development
 

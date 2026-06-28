@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 from .config import AppConfig, ModelChoice
@@ -19,3 +20,5 @@ class AgentContext:
     todo_store: TodoStore
     notes_tools: list[Any]
     todo_tools: list[Any]
+    clarification_tools: list[Any]
+    log: Callable[[str], None]

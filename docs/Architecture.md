@@ -56,6 +56,8 @@ Agents receive an `AgentContext` with:
 - `todo_store`
 - `notes_tools`
 - `todo_tools`
+- `clarification_tools`
+- `log`
 
 Only the root `agent.model` is automatically overridden before a run. If an agent owns subagents, `set_context` should update them.
 
@@ -97,9 +99,17 @@ TODO tools:
 - `mark_todo_done(index)`
 - `get_next_todo()`
 
+Clarification tools:
+
+- `ask_user_clarification(question, options, allow_custom_answer=False)`
+
+Each clarification option has `title` and `detail`. The tool opens a modal and blocks the current agent run until the user selects an option or enters a custom answer. It returns `{"title": ..., "detail": ...}`.
+
 Stores are in memory for the current chat session. `/notes save` exports notes to markdown.
 
 `extra` is accepted by the tool as text so the Agents SDK can generate a strict JSON schema. The store keeps it as metadata.
+
+`context.log(message)` is a host callback, not a model-callable tool. It writes a light-green message into the transcript so agent code can expose progress or educational breadcrumbs.
 
 ## Streaming Flow
 

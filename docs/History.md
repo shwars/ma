@@ -15,3 +15,8 @@
 - Improved TODO pane rendering with no-wrap rows, horizontal scrolling, Unicode checkbox markers, and light-green completed items.
 - Added slash-command Tab completion with muted completion hints, plus a startup splash shown before background initialization finishes.
 - Changed startup so the composer stays hidden and disabled until initialization completes.
+
+## 2026-06-29
+
+- Added `context.log(...)` as a host callback for light-green agent progress messages.
+- Added a model-callable clarification tool that opens a modal, waits for user selection or custom input, and returns the selected title/detail pair.

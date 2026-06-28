@@ -11,7 +11,7 @@ from textual import work
 from textual.app import App, ComposeResult, SystemCommand
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Header, Label, ListItem, ListView, Static, TextArea
+from textual.widgets import Button, Footer, Header, Input, Label, ListItem, ListView, Static, TextArea
 from openai.types.responses import ResponseTextDeltaEvent
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
@@ -21,7 +21,7 @@ from .config import AppConfig, ModelChoice, load_config
 from .context import AgentContext
 from .runtime import build_model
 from .stores import Note, NotesStore, TodoItem, TodoStore
-from .tools import build_notes_tools, build_todo_tools
+from .tools import build_clarification_tools, build_notes_tools, build_todo_tools
 
 REASONING_CHOICES: list[tuple[str, str]] = [
     ("agent_default", "Agent Default"),
@@ -95,6 +95,70 @@ class NoteDetailScreen(ModalScreen[None]):
 
     def key_escape(self) -> None:
         self.dismiss(None)
+
+
+class ClarificationScreen(ModalScreen[dict[str, str]]):
+    def __init__(
+        self,
+        question: str,
+        options: list[dict[str, str]],
+        allow_custom_answer: bool = False,
+    ) -> None:
+        super().__init__()
+        self.question = question
+        self.options = options
+        self.allow_custom_answer = allow_custom_answer
+        self.option_by_id = {f"clarification-option-{index}": option for index, option in enumerate(options)}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="clarification"):
+            yield Label(self.question, id="clarification-question")
+            items: list[ListItem] = []
+            for index, option in enumerate(self.options):
+                items.append(
+                    ListItem(
+                        Label(f"{option['title']}\n{option['detail']}"),
+                        id=f"clarification-option-{index}",
+                    )
+                )
+            if self.allow_custom_answer:
+                items.append(ListItem(Label("Own answer\nType a custom response."), id="clarification-custom"))
+            yield ListView(*items, id="clarification-options")
+            if self.allow_custom_answer:
+                yield Input(placeholder="Type your answer", id="custom-answer")
+                yield Button("Use own answer", id="custom-submit")
+
+    def on_mount(self) -> None:
+        self.query_one(ListView).focus()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        widget_id = event.item.id or ""
+        if widget_id == "clarification-custom":
+            answer = self.query_one("#custom-answer", Input)
+            submit = self.query_one("#custom-submit", Button)
+            answer.add_class("visible")
+            submit.add_class("visible")
+            answer.focus()
+            return
+        option = self.option_by_id.get(widget_id)
+        if option is not None:
+            self.dismiss(option)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "custom-answer":
+            self.submit_custom_answer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "custom-submit":
+            self.submit_custom_answer()
+
+    def submit_custom_answer(self) -> None:
+        answer = self.query_one("#custom-answer", Input).value.strip()
+        if answer:
+            self.dismiss({"title": "Own answer", "detail": answer})
+
+    def key_escape(self) -> None:
+        self.dismiss({"title": "Cancelled", "detail": "User cancelled clarification."})
 
 
 class ComposerTextArea(TextArea):
@@ -322,12 +386,45 @@ class MaApp(App[None]):
         height: 1fr;
     }
 
+    #clarification {
+        width: 72;
+        height: auto;
+        max-height: 28;
+        border: round $primary;
+        background: $surface;
+        padding: 1;
+    }
+
+    #clarification-question {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #clarification-options {
+        height: auto;
+        max-height: 14;
+        margin-bottom: 1;
+    }
+
+    #custom-answer, #custom-submit {
+        display: none;
+    }
+
+    #custom-answer.visible, #custom-submit.visible {
+        display: block;
+    }
+
     .notes-list {
         height: 1fr;
     }
 
     .todo-list {
         width: auto;
+    }
+
+    .agent-log {
+        color: lightgreen;
+        margin-bottom: 1;
     }
     """
 
@@ -344,6 +441,7 @@ class MaApp(App[None]):
         self.todo_store = TodoStore()
         self.notes_tools: list[Any] = []
         self.todo_tools: list[Any] = []
+        self.clarification_tools: list[Any] = []
         self.agent_names: list[str] = []
         self.active_agent: LoadedAgent | None = None
         self.selected_model: ModelChoice | None = self._initial_model_choice()
@@ -390,6 +488,7 @@ class MaApp(App[None]):
     async def finish_startup(self) -> None:
         self.notes_tools = build_notes_tools(self.notes_store)
         self.todo_tools = build_todo_tools(self.todo_store)
+        self.clarification_tools = build_clarification_tools(self.ask_user_clarification)
         self.selected_model_object = build_model(self.config, self.selected_model)
         await self.reload_agents()
         self.refresh_side()
@@ -548,6 +647,8 @@ class MaApp(App[None]):
             todo_store=self.todo_store,
             notes_tools=self.notes_tools,
             todo_tools=self.todo_tools,
+            clarification_tools=self.clarification_tools,
+            log=self.log_agent_message,
         )
         self.active_agent.set_context(context)
 
@@ -693,6 +794,27 @@ class MaApp(App[None]):
         transcript = self.query_one("#transcript", VerticalScroll)
         transcript.mount(Static(f"[dim]{text}[/dim]", classes="event"))
         transcript.scroll_end(animate=False)
+
+    def log_agent_message(self, message: str) -> None:
+        transcript = self.query_one("#transcript", VerticalScroll)
+        transcript.mount(Static(Text(str(message), style="light_green"), classes="agent-log"))
+        transcript.scroll_end(animate=False)
+
+    async def ask_user_clarification(
+        self,
+        question: str,
+        options: list[dict[str, str]],
+        allow_custom_answer: bool = False,
+    ) -> dict[str, str]:
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, str]] = loop.create_future()
+
+        def done(result: dict[str, str]) -> None:
+            if not future.done():
+                future.set_result(result)
+
+        await self.push_screen(ClarificationScreen(question, options, allow_custom_answer), done)
+        return await future
 
     def refresh_side(self) -> None:
         self.side_refresh_index += 1

@@ -6,11 +6,12 @@ from types import ModuleType
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
 from textual.containers import HorizontalScroll
-from textual.widgets import Static
+from textual.widgets import ListView, Static
 
 from ma.agent_loader import LoadedAgent
 from ma.app import (
     AssistantBlock,
+    ClarificationScreen,
     ComposerTextArea,
     MaApp,
     complete_command_text,
@@ -154,6 +155,103 @@ def test_assistant_blocks_finalize_before_events_and_restart_after():
             assert isinstance(children[event_index], Static)
             assert isinstance(children[event_index + 1], Static)
             assert isinstance(children[event_index + 1].content, RichMarkdown)
+
+    asyncio.run(run())
+
+
+def test_agent_log_renders_light_green_message():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            transcript = pilot.app.query_one("#transcript")
+
+            pilot.app.log_agent_message("Checking source quality")
+            await pilot.pause()
+
+            log_widget = transcript.query_one(".agent-log", Static)
+            assert isinstance(log_widget.content, Text)
+            assert log_widget.content.plain == "Checking source quality"
+            assert str(log_widget.content.style) == "light_green"
+
+    asyncio.run(run())
+
+
+def test_apply_context_includes_log_and_clarification_tools():
+    async def run() -> None:
+        captured_context = None
+
+        class Module:
+            @staticmethod
+            def set_context(context):
+                nonlocal captured_context
+                captured_context = context
+
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            app.clarification_tools = ["clarify"]
+            app.active_agent = LoadedAgent(
+                name="context",
+                module=Module(),
+                agent=object(),
+                props={"display_name": "Context"},
+            )
+
+            app.apply_context()
+
+            assert captured_context is not None
+            assert captured_context.log == app.log_agent_message
+            assert captured_context.clarification_tools == ["clarify"]
+
+    asyncio.run(run())
+
+
+def test_clarification_modal_returns_selected_option():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            task = asyncio.create_task(
+                pilot.app.ask_user_clarification(
+                    "Pick one",
+                    [{"title": "A", "detail": "First"}, {"title": "B", "detail": "Second"}],
+                )
+            )
+            await pilot.pause()
+
+            screen = pilot.app.screen
+            assert isinstance(screen, ClarificationScreen)
+            assert screen.question == "Pick one"
+            assert len(screen.query_one("#clarification-options", ListView).children) == 2
+
+            await pilot.press("enter")
+            result = await task
+
+            assert result == {"title": "A", "detail": "First"}
+
+    asyncio.run(run())
+
+
+def test_clarification_modal_returns_custom_answer():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            task = asyncio.create_task(
+                pilot.app.ask_user_clarification(
+                    "Pick one",
+                    [{"title": "A", "detail": "First"}],
+                    allow_custom_answer=True,
+                )
+            )
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.pause()
+
+            screen = pilot.app.screen
+            assert isinstance(screen, ClarificationScreen)
+            custom_answer = screen.query_one("#custom-answer")
+            custom_answer.value = "Something else"
+            screen.submit_custom_answer()
+
+            result = await task
+
+            assert result == {"title": "Own answer", "detail": "Something else"}
 
     asyncio.run(run())
 
