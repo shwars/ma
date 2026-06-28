@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from agents import Agent, CodeInterpreterTool
-from openai import OpenAI
 
 from filesystem_tools import configure, inspect, ls, upload
 
@@ -37,20 +36,15 @@ def set_context(context: Any) -> None:
     global _context, _container_id
     _context = context
 
-    if not context.folder_id or not context.api_key:
+    if context.client is None:
         configure(root=None, client=None, container_id=None)
         agent.tools = [ls, inspect, *context.clarification_tools]
         context.log("Data Analyst needs Yandex folder_id/api_key to use Code Interpreter.")
         return
 
-    client = OpenAI(
-        base_url="https://ai.api.cloud.yandex.net/v1",
-        api_key=context.api_key,
-        project=context.folder_id,
-    )
-    container = client.containers.create(name="ma-data-analysis")
+    container = context.client.containers.create(name="ma-data-analysis")
     _container_id = container.id
-    configure(root=None, client=client, container_id=_container_id)
+    configure(root=None, client=context.client, container_id=_container_id)
 
     if context.model is not None:
         agent.model = context.model

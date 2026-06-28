@@ -10,6 +10,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Yandex Cloud OpenAI-compatible model runtime
 - Commands for agent/model selection, reload, and notes
 - Code Interpreter output display with generated-file download controls
+- A top status line showing Ready, Working, Needs input, or Executing code
 - Command palette entries matching the main slash commands
 - Tab completion and muted live hints for slash commands
 - Startup splash screen while agents and models initialize
@@ -76,6 +77,7 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 - `/agent [name]` selects the active agent, or opens the selector when no name is given.
 - `/model [model]` selects the active model, or opens the selector when no model is given.
 - `/reasoning` selects the reasoning effort for the current model.
+- `/theme [name]` selects a Textual UI theme, or opens the selector when no theme is given.
 - `/download auto`, `/download ask`, `/download skip` controls Code Interpreter generated-file downloads. Default is `ask`.
 - `/new` starts a new chat session and clears session state.
 - `/help` opens the command help window.
@@ -84,7 +86,7 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 - `/notes clear` clears session notes.
 - `/exit` exits the app.
 
-While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer, including available agent names and model names.
+While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer, including available agent names, model names, and theme names.
 
 ## Built-In Agents
 
@@ -93,6 +95,7 @@ While typing a slash command, press Tab to complete the current prefix. `ma` als
 - `data_analyst`: a local-data analyst that can list/inspect local CSV/XLS/XLSX files, upload selected files to Code Interpreter, run analysis, and return generated files.
 
 For Code Interpreter runs, generated code appears as a collapsed expandable block. Code output/logs are shown in dark green. Files returned by Code Interpreter follow the active `/download` mode.
+If a returned file already exists with the same name, size, and checksum, `ma` treats it as already downloaded instead of writing a suffixed duplicate.
 
 ## Creating Agents
 
@@ -130,7 +133,7 @@ def get_props():
 
 Run `/reload` after adding or editing an agent.
 
-`context.log(message)` writes a light-green message to the transcript. `context.clarification_tools` exposes `ask_user_clarification(question, options, allow_custom_answer=False)`, where each option has `title` and `detail`; it returns the selected `{title, detail}`.
+`context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients. `context.log(message)` writes a light-green message to the transcript. `context.clarification_tools` exposes `ask_user_clarification(question, options, allow_custom_answer=False)`, where each option has `title` and `detail`; it returns the selected `{title, detail}`.
 
 ## Development
 

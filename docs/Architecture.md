@@ -5,7 +5,7 @@
 ## Application Shape
 
 - `ma.cli` exposes the `ma` console command.
-- `ma.app` contains the Textual UI: transcript, input line, selectors, and optional right-side notes/TODO panes.
+- `ma.app` contains the Textual UI: transcript, input line, status line, selectors, and optional right-side notes/TODO panes.
 - `ma.config` loads optional `config.json`, optional `.env`, and process environment credentials.
 - `ma.runtime` creates the Yandex-backed Agents SDK model:
   - `AsyncOpenAI(base_url="https://ai.api.cloud.yandex.net/v1", api_key=..., project=folder_id)`
@@ -53,12 +53,16 @@ Agents receive an `AgentContext` with:
 - `reasoning_level`
 - `folder_id`
 - `api_key`
+- `client`
+- `aclient`
 - `notes_store`
 - `todo_store`
 - `notes_tools`
 - `todo_tools`
 - `clarification_tools`
 - `log`
+
+`client` is the sync OpenAI-compatible Yandex client and `aclient` is the async version. They are created by `ma.runtime` so agents can use direct API features without recreating clients.
 
 Only the root `agent.model` is automatically overridden before a run. If an agent owns subagents, `set_context` should update them.
 
@@ -82,7 +86,7 @@ The first model option is always `Agent Default`. Selecting it means `ma` does n
 
 ## Built-In Data Analyst
 
-`agents/data_analyst/main.py` creates a Code Interpreter container using the Yandex/OpenAI sync client during `set_context`. It configures reusable tools from `filesystem_tools.py`:
+`agents/data_analyst/main.py` creates a Code Interpreter container using `context.client` during `set_context`. It configures reusable tools from `filesystem_tools.py`:
 
 - `ls(mask=None)`
 - `inspect(filename)`
@@ -94,7 +98,9 @@ The tools are rooted at `Path.cwd()`, reject absolute paths and `..`, and inspec
 
 The transcript initially mounts a lightweight splash screen and keeps the composer hidden and unfocused. After Textual's first refresh, `ma` starts background initialization for model construction and agent loading, then removes the splash and focuses the composer when startup completes.
 
-The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types. Completion candidates are dynamic: built-in commands plus loaded agent names/display names and configured model IDs/display names.
+The top status line shows the active agent, active model, download mode, and current status. Status values are color-coded: Ready is white, Working is light green, Needs input is blue, and Executing code is yellow.
+
+The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types. Completion candidates are dynamic: built-in commands plus loaded agent names/display names, configured model IDs/display names, and Textual theme names.
 
 `/new` starts a fresh chat session by clearing conversation history, session notes/TODOs, transcript widgets, and downloaded Code Interpreter file tracking. It keeps the selected agent, model, and reasoning settings.
 
@@ -132,6 +138,7 @@ It displays:
 
 - raw text deltas as assistant output
 - run item events as tool-call/tool-output status lines
+- reasoning items as reasoning status lines when the provider includes reasoning summaries or text
 - agent update events as handoff status lines
 - Code Interpreter code as collapsed expandable blocks
 - Code Interpreter logs/output in dark green
@@ -151,3 +158,4 @@ The download policy is controlled by:
 - `/download skip`: show file names but do not download.
 
 Downloaded files are written to `Path.cwd()`. Existing filenames are preserved by suffixing new paths, such as `chart-1.png`. Downloaded file IDs are tracked per session to avoid duplicate downloads.
+Before suffixing, `ma` checks whether the direct target filename already has the same size and SHA-256 checksum as the downloaded bytes. Identical files are treated as already present and are not written again.

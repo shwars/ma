@@ -16,6 +16,8 @@ class AgentContext:
     reasoning_level: str | None
     folder_id: str
     api_key: str
+    client: Any
+    aclient: Any
     notes_store: NotesStore
     todo_store: TodoStore
     notes_tools: list[Any]

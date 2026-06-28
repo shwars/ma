@@ -61,6 +61,8 @@ uv run ma
 - `/model <model>` switches directly to a model by ID or display name.
 - `/reasoning` opens the reasoning selector for the current model.
 - `/reasoning low`, `/reasoning medium`, and similar direct forms update reasoning without opening the selector.
+- `/theme` opens the UI theme selector.
+- `/theme <name>` switches directly to a Textual theme such as `nord`, `gruvbox`, or `textual-dark`.
 - `/download` opens the download-mode selector.
 - `/download auto` downloads Code Interpreter generated files automatically.
 - `/download ask` asks before downloading Code Interpreter generated files. This is the default.
@@ -72,9 +74,10 @@ uv run ma
 - `/notes clear` clears current notes.
 - `/exit` exits the app.
 
-The command palette exposes the same main app commands: Agent, Model, Reasoning, Download, New, Help, Reload, Notes Save, Notes Clear, and Exit.
-When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names and model names.
+The command palette exposes the same main app commands: Agent, Model, Reasoning, Theme, Download, New, Help, Reload, Notes Save, Notes Clear, and Exit.
+When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names, model names, and theme names.
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
+The top status line shows the active agent/model plus current run status: Ready, Working, Needs input, or Executing code.
 
 ## Built-In Agents
 
@@ -89,6 +92,7 @@ The Data Analyst local filesystem tools are:
 - `upload(filenames)`: upload selected local files into the active Code Interpreter container.
 
 Generated Code Interpreter code is shown as a collapsed expandable block. Code output/logs are shown in dark green. The agent is instructed to return every file it creates so `ma` can download or report it according to `/download`.
+When a returned file already exists in the working directory with the same name, size, and checksum, `ma` skips saving a duplicate. If the name exists but the content differs, it writes a suffixed file such as `chart-1.png`.
 
 When the active agent uses notes or TODOs, the right pane shows that state live during the chat.
 Notes and TODOs are displayed in separate panes. If only one pane is enabled for the selected agent, it uses the full right-side height.
@@ -133,6 +137,8 @@ def get_props():
 Run `/reload` after editing or adding an agent.
 
 The notes tool accepts `extra` as optional text metadata. Use JSON text there if you want to preserve several custom fields in one note.
+
+`context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients for agents that need direct API access, such as creating Code Interpreter containers or uploading files.
 
 `context.log(message)` displays a light-green message in the transcript. It is a Python callback for agent code, not a model-callable tool by default.
 

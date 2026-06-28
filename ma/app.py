@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
 from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ from textual import work
 from textual.app import App, ComposeResult, SystemCommand
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Collapsible, Footer, Header, Input, Label, ListItem, ListView, Static, TextArea
+from textual.widgets import Button, Collapsible, Footer, Input, Label, ListItem, ListView, Static, TextArea
 from openai.types.responses import ResponseTextDeltaEvent
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
@@ -19,7 +20,7 @@ from rich.text import Text
 from .agent_loader import AgentLoader, LoadedAgent
 from .config import AppConfig, ModelChoice, load_config
 from .context import AgentContext
-from .runtime import build_model
+from .runtime import build_clients, build_model
 from .stores import Note, NotesStore, TodoItem, TodoStore
 from .tools import build_clarification_tools, build_notes_tools, build_todo_tools
 
@@ -51,12 +52,25 @@ COMMAND_COMPLETIONS = [
     "/reasoning high",
     "/reasoning xhigh",
     "/reload",
+    "/theme",
     "/notes save",
     "/notes clear",
     "/exit",
 ]
 
 DOWNLOAD_MODES = {"auto", "ask", "skip"}
+AGENT_STATUS_STYLES = {
+    "Ready": "white",
+    "Working": "light_green",
+    "Needs input": "dodger_blue1",
+    "Executing code": "yellow",
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class DownloadResult:
+    path: Path
+    saved: bool
 
 
 def safe_download_path(directory: Path, filename: str) -> Path:
@@ -73,6 +87,25 @@ def safe_download_path(directory: Path, filename: str) -> Path:
         if not next_candidate.exists():
             return next_candidate
         index += 1
+
+
+def same_file_content(path: Path, data: bytes) -> bool:
+    if not path.is_file():
+        return False
+    if path.stat().st_size != len(data):
+        return False
+    return hashlib.sha256(path.read_bytes()).digest() == hashlib.sha256(data).digest()
+
+
+def write_downloaded_file(directory: Path, filename: str, data: bytes) -> DownloadResult:
+    clean_name = Path(filename).name or "downloaded-file"
+    direct_path = directory / clean_name
+    if same_file_content(direct_path, data):
+        return DownloadResult(direct_path, saved=False)
+
+    path = safe_download_path(directory, filename)
+    path.write_bytes(data)
+    return DownloadResult(path, saved=True)
 
 
 def _file_annotation_from_object(value: Any) -> dict[str, str] | None:
@@ -123,6 +156,45 @@ def code_interpreter_logs(raw: Any) -> str:
         if logs:
             lines.append(str(logs))
     return "\n".join(lines)
+
+
+def is_reasoning_item(item: Any) -> bool:
+    item_type = str(getattr(item, "type", "")).lower()
+    raw_type = str(getattr(getattr(item, "raw_item", None), "type", "")).lower()
+    return "reasoning" in item_type or "reasoning" in raw_type
+
+
+def reasoning_item_text(item: Any) -> str:
+    pieces: list[str] = []
+    seen: set[int] = set()
+
+    def visit(value: Any) -> None:
+        if value is None:
+            return
+        value_id = id(value)
+        if value_id in seen:
+            return
+        seen.add(value_id)
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                pieces.append(text)
+            return
+        if isinstance(value, dict):
+            for key in ("text", "content", "summary", "reasoning"):
+                visit(value.get(key))
+            return
+        if isinstance(value, (list, tuple)):
+            for child in value:
+                visit(child)
+            return
+        for attr in ("text", "content", "summary", "reasoning"):
+            visit(getattr(value, attr, None))
+
+    visit(item)
+    visit(getattr(item, "raw_item", None))
+    unique = list(dict.fromkeys(piece for piece in pieces if piece))
+    return "\n".join(unique)
 
 
 class PickerScreen(ModalScreen[str | None]):
@@ -180,6 +252,7 @@ class HelpScreen(ModalScreen[None]):
                 "/agent [name]       Select the active agent.",
                 "/model [model]      Select the active model.",
                 "/reasoning [level]  Set reasoning level for the current model.",
+                "/theme [name]       Select the Textual UI theme.",
                 "/download [mode]    Set Code Interpreter file downloads: auto, ask, skip.",
                 "/new                Start a new chat session and clear session state.",
                 "/reload             Reload agents from disk.",
@@ -408,6 +481,12 @@ class MaApp(App[None]):
         layout: vertical;
     }
 
+    #status-header {
+        height: 1;
+        background: $boost;
+        padding-left: 1;
+    }
+
     #body {
         height: 1fr;
     }
@@ -622,6 +701,8 @@ class MaApp(App[None]):
         self.active_agent: LoadedAgent | None = None
         self.selected_model: ModelChoice | None = self._initial_model_choice()
         self.selected_model_object: Any = None
+        self.client: Any = None
+        self.aclient: Any = None
         self.reasoning_by_model_id: dict[str, str | None] = {}
         self.side_refresh_index = 0
         self.history: list[Any] = []
@@ -629,6 +710,7 @@ class MaApp(App[None]):
         self.starting = True
         self.download_mode = "ask"
         self.downloaded_file_ids: set[str] = set()
+        self.agent_status = "Ready"
 
     def _initial_model_choice(self) -> ModelChoice | None:
         return next(
@@ -637,7 +719,7 @@ class MaApp(App[None]):
         )
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Static("", id="status-header")
         with Horizontal(id="body"):
             with Vertical(id="main"):
                 with VerticalScroll(id="transcript"):
@@ -648,7 +730,7 @@ class MaApp(App[None]):
         yield Static("", id="completion-hint")
         yield ComposerTextArea(
             "",
-            placeholder="Message, or /agent /model /download /reasoning /new /help /exit",
+            placeholder="Message, or /agent /model /theme /download /reasoning /new /help /exit",
             id="composer",
             show_line_numbers=False,
             soft_wrap=True,
@@ -658,6 +740,7 @@ class MaApp(App[None]):
 
     async def on_mount(self) -> None:
         self.title = "ma"
+        self.update_status_header()
         self.call_after_refresh(self.start_background_startup)
 
     def start_background_startup(self) -> None:
@@ -667,6 +750,7 @@ class MaApp(App[None]):
         self.notes_tools = build_notes_tools(self.notes_store)
         self.todo_tools = build_todo_tools(self.todo_store)
         self.clarification_tools = build_clarification_tools(self.ask_user_clarification)
+        self.client, self.aclient = build_clients(self.config)
         self.selected_model_object = build_model(self.config, self.selected_model)
         await self.reload_agents()
         self.refresh_side()
@@ -678,6 +762,23 @@ class MaApp(App[None]):
         composer.disabled = False
         composer.add_class("ready")
         composer.focus()
+        self.set_agent_status("Ready")
+
+    def set_agent_status(self, status: str) -> None:
+        self.agent_status = status
+        self.update_status_header()
+
+    def update_status_header(self) -> None:
+        header = self.query("#status-header")
+        if not header:
+            return
+        style = AGENT_STATUS_STYLES.get(self.agent_status, "white")
+        agent = self.active_agent.display_name if self.active_agent else "No agent"
+        model = self.selected_model.display_name if self.selected_model else "No model"
+        status = Text()
+        status.append(f"● {self.agent_status}", style=style)
+        status.append(f"  ma  Agent: {agent}  Model: {model}  Download: {self.download_mode}", style="white")
+        header.first().update(status)
 
     def complete_command(self) -> None:
         composer = self.query_one("#composer", ComposerTextArea)
@@ -708,6 +809,8 @@ class MaApp(App[None]):
             commands.append(f"/model {model.id}")
             if model.display_name and model.display_name.lower() != model.id.lower():
                 commands.append(f"/model {model.display_name}")
+        for theme_name in self.theme_names():
+            commands.append(f"/theme {theme_name}")
         return sorted(dict.fromkeys(commands), key=str.lower)
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
@@ -740,6 +843,10 @@ class MaApp(App[None]):
             await self.choose_download_mode()
         elif command.startswith("/download "):
             self.switch_download_mode(command.split(maxsplit=1)[1])
+        elif command == "/theme":
+            await self.choose_theme()
+        elif command.startswith("/theme "):
+            self.switch_theme(stripped.split(maxsplit=1)[1])
         elif command == "/help":
             await self.show_help()
         elif command == "/new":
@@ -787,6 +894,13 @@ class MaApp(App[None]):
             self.switch_download_mode,
         )
 
+    async def choose_theme(self) -> None:
+        choices = [(name, name) for name in self.theme_names()]
+        await self._push_picker("Select theme", choices, self.switch_theme)
+
+    def theme_names(self) -> list[str]:
+        return sorted(self.available_themes.keys(), key=str.lower)
+
     async def show_help(self) -> None:
         await self.push_screen(HelpScreen())
 
@@ -809,6 +923,7 @@ class MaApp(App[None]):
         if not self.agent_names:
             self.active_agent = None
             self.add_event("No agents found under agents/.")
+            self.update_status_header()
             return
 
         active_name = self.active_agent.name if self.active_agent else (
@@ -826,6 +941,7 @@ class MaApp(App[None]):
         if announce:
             self.add_event(f"Active agent: {self.active_agent.display_name}.")
         self.refresh_side()
+        self.update_status_header()
 
     async def switch_agent_by_query(self, query: str) -> None:
         normalized = query.strip().lower()
@@ -842,6 +958,7 @@ class MaApp(App[None]):
         if self.selected_model:
             self.add_event(f"Active model: {self.selected_model.display_name}.")
         self.apply_context()
+        self.update_status_header()
 
     def switch_model_by_query(self, query: str) -> None:
         normalized = query.strip().lower()
@@ -874,6 +991,16 @@ class MaApp(App[None]):
             return
         self.download_mode = normalized
         self.add_event(f"Download mode: {normalized}.")
+        self.update_status_header()
+
+    def switch_theme(self, theme_name: str) -> None:
+        normalized = theme_name.strip()
+        match = next((name for name in self.theme_names() if name.lower() == normalized.lower()), None)
+        if match is None:
+            self.add_event(f"Unknown theme: {theme_name}")
+            return
+        self.theme = match
+        self.add_event(f"Theme: {match}.")
 
     def new_session(self) -> None:
         if self.busy:
@@ -887,6 +1014,7 @@ class MaApp(App[None]):
         transcript.remove_children()
         self.refresh_side()
         self.add_event("Started a new chat session.")
+        self.set_agent_status("Ready")
 
     @property
     def selected_reasoning_level(self) -> str | None:
@@ -904,6 +1032,8 @@ class MaApp(App[None]):
             reasoning_level=self.selected_reasoning_level,
             folder_id=self.config.folder_id,
             api_key=self.config.api_key,
+            client=self.client,
+            aclient=self.aclient,
             notes_store=self.notes_store,
             todo_store=self.todo_store,
             notes_tools=self.notes_tools,
@@ -928,6 +1058,9 @@ class MaApp(App[None]):
     def action_choose_download_mode(self) -> None:
         self.run_worker(self.choose_download_mode())
 
+    def action_choose_theme(self) -> None:
+        self.run_worker(self.choose_theme())
+
     def action_show_help(self) -> None:
         self.run_worker(self.show_help())
 
@@ -944,6 +1077,7 @@ class MaApp(App[None]):
         yield SystemCommand("Agent", "Select the active agent", self.action_choose_agent)
         yield SystemCommand("Model", "Select the active model", self.action_choose_model)
         yield SystemCommand("Reasoning", "Set reasoning level for the current model", self.action_choose_reasoning)
+        yield SystemCommand("Theme", "Select the UI theme", self.action_choose_theme)
         yield SystemCommand("Download", "Set Code Interpreter file download mode", self.action_choose_download_mode)
         yield SystemCommand("New", "Start a new chat session", self.action_new_session)
         yield SystemCommand("Help", "Show available commands", self.action_show_help)
@@ -979,6 +1113,7 @@ class MaApp(App[None]):
             return
 
         self.busy = True
+        self.set_agent_status("Working")
         user_widget = Static(text, classes="user-message")
         transcript = self.query_one("#transcript", VerticalScroll)
         await transcript.mount(user_widget)
@@ -1014,7 +1149,9 @@ class MaApp(App[None]):
                     if self.render_code_interpreter_item(stream_event.item):
                         await self.handle_code_interpreter_files([stream_event.item])
                     else:
-                        self.add_event(self.describe_run_item(stream_event.item))
+                        description = self.describe_run_item(stream_event.item)
+                        if description:
+                            self.add_event(description)
                     self.refresh_side()
                 elif stream_event.type == "agent_updated_stream_event":
                     if current_assistant_block is not None:
@@ -1035,6 +1172,7 @@ class MaApp(App[None]):
             self.add_event(f"Run failed: {exc}")
         finally:
             self.busy = False
+            self.set_agent_status("Ready")
 
     def apply_reasoning_settings(self) -> None:
         if not self.active_agent or not self.selected_model:
@@ -1052,8 +1190,11 @@ class MaApp(App[None]):
         )
         setattr(self.active_agent.agent, "model_settings", new_settings)
 
-    def describe_run_item(self, item: Any) -> str:
+    def describe_run_item(self, item: Any) -> str | None:
         item_type = getattr(item, "type", "")
+        if is_reasoning_item(item):
+            text = reasoning_item_text(item)
+            return f"Reasoning: {text[:2000]}" if text else "Reasoning item."
         if item_type == "tool_call_item":
             raw = getattr(item, "raw_item", None)
             action = getattr(raw, "action", None)
@@ -1064,7 +1205,7 @@ class MaApp(App[None]):
             output = str(getattr(item, "output", ""))
             return f"Tool output: {output[:160]}"
         if item_type == "message_output_item":
-            return "Message complete."
+            return None
         return f"Event: {item_type or item}"
 
     def render_code_interpreter_item(self, item: Any) -> bool:
@@ -1072,6 +1213,7 @@ class MaApp(App[None]):
         if not is_code_interpreter_raw(raw):
             return False
 
+        self.set_agent_status("Executing code")
         code = getattr(raw, "code", None)
         logs = code_interpreter_logs(raw)
         if code:
@@ -1120,35 +1262,39 @@ class MaApp(App[None]):
             return
 
         for file in new_files:
-            path = self.download_code_interpreter_file(file["file_id"], file["filename"])
+            download = self.download_code_interpreter_file(file["file_id"], file["filename"])
             self.downloaded_file_ids.add(file["file_id"])
-            self.add_event(f"Downloaded {file['filename']} to {path}.")
+            if download.saved:
+                self.add_event(f"Downloaded {file['filename']} to {download.path}.")
+            else:
+                self.add_event(f"Skipped {file['filename']}: identical file already exists at {download.path}.")
 
     async def ask_download_files(self, files: list[dict[str, str]]) -> bool:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bool] = loop.create_future()
+        previous_status = self.agent_status
+        self.set_agent_status("Needs input")
 
         def done(result: bool) -> None:
-            if not future.done():
-                future.set_result(result)
+            def resolve_after_dismiss() -> None:
+                self.set_agent_status(previous_status)
+                if not future.done():
+                    future.set_result(result)
+
+            self.call_after_refresh(resolve_after_dismiss)
 
         await self.push_screen(DownloadFilesScreen(files), done)
         return await future
 
-    def download_code_interpreter_file(self, file_id: str, filename: str) -> Path:
-        from openai import OpenAI
-
-        client = OpenAI(
-            base_url="https://ai.api.cloud.yandex.net/v1",
-            api_key=self.config.api_key,
-            project=self.config.folder_id,
-        )
-        path = safe_download_path(Path.cwd(), filename)
-        content = client.files.content(file_id)
-        path.write_bytes(content.read())
-        return path
+    def download_code_interpreter_file(self, file_id: str, filename: str) -> DownloadResult:
+        if self.client is None:
+            raise RuntimeError("No OpenAI client is configured.")
+        content = self.client.files.content(file_id)
+        return write_downloaded_file(Path.cwd(), filename, content.read())
 
     def add_event(self, text: str) -> None:
+        if not text:
+            return
         transcript = self.query_one("#transcript", VerticalScroll)
         transcript.mount(Static(f"[dim]{text}[/dim]", classes="event"))
         transcript.scroll_end(animate=False)
@@ -1166,8 +1312,11 @@ class MaApp(App[None]):
     ) -> dict[str, str]:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, str]] = loop.create_future()
+        previous_status = self.agent_status
+        self.set_agent_status("Needs input")
 
         def done(result: dict[str, str]) -> None:
+            self.set_agent_status(previous_status)
             if not future.done():
                 future.set_result(result)
 

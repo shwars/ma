@@ -23,3 +23,8 @@
 - Added the built-in Data Analyst agent with reusable local filesystem tools and Yandex Code Interpreter integration.
 - Added Code Interpreter rendering: generated code appears collapsed, logs/output appear in dark green, and returned files follow `/download auto|ask|skip`.
 - Added `/new` and `/help`, direct `/agent <name>` and `/model <model>` switching, dynamic Tab completion for agents/models, and a single palette Download command that opens mode selection.
+- Added a color-coded top status line for Ready, Working, Needs input, and Executing code states.
+- Changed Code Interpreter downloads so the confirmation modal dismisses before downloads start, and identical existing files are skipped instead of duplicated.
+- Moved sync/async OpenAI-compatible Yandex clients into `AgentContext` so agents can reuse host clients instead of recreating them.
+- Added `/theme` with direct selection, picker selection, palette access, and Tab completion for Textual theme names.
+- Render reasoning stream items with extracted reasoning text/summaries instead of generic event labels.

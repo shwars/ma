@@ -14,13 +14,17 @@ from ma.app import (
     AssistantBlock,
     ClarificationScreen,
     ComposerTextArea,
+    DownloadResult,
     HelpScreen,
     MaApp,
     collect_output_files,
     complete_command_text,
+    reasoning_item_text,
     render_command_hint,
     render_todo_items,
     safe_download_path,
+    same_file_content,
+    write_downloaded_file,
 )
 from ma.stores import TodoItem
 
@@ -118,6 +122,7 @@ def test_dynamic_command_completion_includes_agent_and_model(tmp_path):
             assert "/agent sample" in completions
             assert "/agent Sample Agent" in completions
             assert "/model Agent Default" in completions
+            assert "/theme textual-dark" in completions
 
     asyncio.run(run())
 
@@ -163,6 +168,21 @@ def test_download_command_updates_mode():
 
             await app.handle_command("/download ask")
             assert app.download_mode == "ask"
+
+    asyncio.run(run())
+
+
+def test_theme_command_switches_theme_and_opens_picker():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+
+            await app.handle_command("/theme nord")
+            assert app.theme == "nord"
+
+            await app.handle_command("/theme")
+            await pilot.pause()
+            assert getattr(app.screen, "title", "") == "Select theme"
 
     asyncio.run(run())
 
@@ -383,9 +403,9 @@ def test_download_policy_auto_skip_and_duplicate_tracking(tmp_path):
             app = pilot.app
             downloaded: list[tuple[str, str]] = []
 
-            def fake_download(file_id: str, filename: str) -> Path:
+            def fake_download(file_id: str, filename: str) -> DownloadResult:
                 downloaded.append((file_id, filename))
-                return tmp_path / filename
+                return DownloadResult(tmp_path / filename, saved=True)
 
             app.download_code_interpreter_file = fake_download
             app.download_mode = "auto"
@@ -407,6 +427,19 @@ def test_download_policy_auto_skip_and_duplicate_tracking(tmp_path):
     asyncio.run(run())
 
 
+def test_write_downloaded_file_skips_same_name_size_and_checksum(tmp_path):
+    existing = tmp_path / "chart.png"
+    existing.write_bytes(b"same")
+
+    skipped = write_downloaded_file(tmp_path, "../chart.png", b"same")
+    changed = write_downloaded_file(tmp_path, "../chart.png", b"different")
+
+    assert same_file_content(existing, b"same") is True
+    assert skipped == DownloadResult(existing, saved=False)
+    assert changed == DownloadResult(tmp_path / "chart-1.png", saved=True)
+    assert (tmp_path / "chart-1.png").read_bytes() == b"different"
+
+
 def test_download_ask_modal_returns_choice():
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:
@@ -418,6 +451,49 @@ def test_download_ask_modal_returns_choice():
             await pilot.press("enter")
 
             assert await task is True
+
+    asyncio.run(run())
+
+
+def test_message_output_items_are_not_rendered_as_events():
+    app = MaApp(config_path="missing.json")
+
+    assert app.describe_run_item(SimpleNamespace(type="message_output_item")) is None
+
+
+def test_reasoning_items_render_summary_text():
+    item = SimpleNamespace(
+        type="reasoning_item",
+        raw_item=SimpleNamespace(
+            type="reasoning",
+            summary=[SimpleNamespace(text="Need to compare the uploaded tables.")],
+        ),
+    )
+    app = MaApp(config_path="missing.json")
+
+    assert reasoning_item_text(item) == "Need to compare the uploaded tables."
+    assert app.describe_run_item(item) == "Reasoning: Need to compare the uploaded tables."
+
+
+def test_status_header_displays_agent_status_and_metadata():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            app.active_agent = LoadedAgent(
+                name="sample",
+                module=ModuleType("sample"),
+                agent=object(),
+                props={"display_name": "Sample"},
+            )
+            app.set_agent_status("Working")
+            await pilot.pause()
+
+            status = app.query_one("#status-header", Static).content
+
+            assert isinstance(status, Text)
+            assert "● Working" in status.plain
+            assert "Agent: Sample" in status.plain
+            assert any(str(span.style) == "light_green" for span in status.spans)
 
     asyncio.run(run())
 
@@ -435,6 +511,8 @@ def test_apply_context_includes_log_and_clarification_tools():
         async with MaApp(config_path="missing.json").run_test() as pilot:
             app = pilot.app
             app.clarification_tools = ["clarify"]
+            app.client = "sync-client"
+            app.aclient = "async-client"
             app.active_agent = LoadedAgent(
                 name="context",
                 module=Module(),
@@ -447,6 +525,8 @@ def test_apply_context_includes_log_and_clarification_tools():
             assert captured_context is not None
             assert captured_context.log == app.log_agent_message
             assert captured_context.clarification_tools == ["clarify"]
+            assert captured_context.client == "sync-client"
+            assert captured_context.aclient == "async-client"
 
     asyncio.run(run())
 
