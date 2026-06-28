@@ -9,6 +9,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Markdown formatting after each streamed assistant block completes
 - Yandex Cloud OpenAI-compatible model runtime
 - Commands for agent/model selection, reload, and notes
+- Code Interpreter output display with generated-file download controls
 - Command palette entries matching the main slash commands
 - Tab completion and muted live hints for slash commands
 - Startup splash screen while agents and models initialize
@@ -72,20 +73,26 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 
 ## Commands
 
-- `/agent` selects the active agent.
-- `/model` selects the active model.
+- `/agent [name]` selects the active agent, or opens the selector when no name is given.
+- `/model [model]` selects the active model, or opens the selector when no model is given.
 - `/reasoning` selects the reasoning effort for the current model.
+- `/download auto`, `/download ask`, `/download skip` controls Code Interpreter generated-file downloads. Default is `ask`.
+- `/new` starts a new chat session and clears session state.
+- `/help` opens the command help window.
 - `/reload` reloads agents from disk.
 - `/notes save` saves session notes to a markdown file.
 - `/notes clear` clears session notes.
 - `/exit` exits the app.
 
-While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer.
+While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer, including available agent names and model names.
 
 ## Built-In Agents
 
 - `simple`: a concise assistant with web search.
 - `deep_research`: a research assistant that uses web search, notes, and TODOs.
+- `data_analyst`: a local-data analyst that can list/inspect local CSV/XLS/XLSX files, upload selected files to Code Interpreter, run analysis, and return generated files.
+
+For Code Interpreter runs, generated code appears as a collapsed expandable block. Code output/logs are shown in dark green. Files returned by Code Interpreter follow the active `/download` mode.
 
 ## Creating Agents
 

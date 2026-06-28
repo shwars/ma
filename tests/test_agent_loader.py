@@ -48,3 +48,14 @@ def test_agent_loader_reload_reads_changed_file(tmp_path):
     main_py.write_text("agent = object()\ndef get_props():\n    return {'display_name': 'Two'}\n", encoding="utf-8")
 
     assert loader.reload("sample").display_name == "Two"
+
+
+def test_builtin_data_analyst_agent_is_discoverable_and_loadable():
+    loader = AgentLoader("agents")
+
+    assert "data_analyst" in loader.discover()
+
+    loaded = loader.load("data_analyst")
+
+    assert loaded.display_name == "Data Analyst"
+    assert loaded.agent is not None

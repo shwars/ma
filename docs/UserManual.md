@@ -56,22 +56,39 @@ uv run ma
 ## Commands
 
 - `/agent` opens the agent selector.
+- `/agent <name>` switches directly to an agent by folder name or display name.
 - `/model` opens the model selector.
+- `/model <model>` switches directly to a model by ID or display name.
 - `/reasoning` opens the reasoning selector for the current model.
 - `/reasoning low`, `/reasoning medium`, and similar direct forms update reasoning without opening the selector.
+- `/download` opens the download-mode selector.
+- `/download auto` downloads Code Interpreter generated files automatically.
+- `/download ask` asks before downloading Code Interpreter generated files. This is the default.
+- `/download skip` leaves generated files in the remote container and only displays their names.
+- `/new` starts a new chat session, clearing conversation history, session notes/TODOs, transcript, and downloaded-file tracking.
+- `/help` opens the command help window.
 - `/reload` reloads agents from disk.
 - `/notes save` saves current notes to a markdown file.
 - `/notes clear` clears current notes.
 - `/exit` exits the app.
 
-The command palette exposes the same main app commands: Agent, Model, Reasoning, Reload, Notes Save, Notes Clear, and Exit.
-When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix.
+The command palette exposes the same main app commands: Agent, Model, Reasoning, Download, New, Help, Reload, Notes Save, Notes Clear, and Exit.
+When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names and model names.
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
 
 ## Built-In Agents
 
 - `simple`: a concise assistant with web search.
 - `deep_research`: a research assistant that uses web search, notes, and TODOs.
+- `data_analyst`: a local-data analyst that can list and inspect files in the current directory, upload selected files to Code Interpreter, run analysis, and return generated files.
+
+The Data Analyst local filesystem tools are:
+
+- `ls(mask=None)`: list files in the current directory, optionally using a glob mask.
+- `inspect(filename)`: inspect CSV/XLS/XLSX files, including sheets, shape, columns, dtypes, and first rows.
+- `upload(filenames)`: upload selected local files into the active Code Interpreter container.
+
+Generated Code Interpreter code is shown as a collapsed expandable block. Code output/logs are shown in dark green. The agent is instructed to return every file it creates so `ma` can download or report it according to `/download`.
 
 When the active agent uses notes or TODOs, the right pane shows that state live during the chat.
 Notes and TODOs are displayed in separate panes. If only one pane is enabled for the selected agent, it uses the full right-side height.

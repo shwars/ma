@@ -20,3 +20,6 @@
 
 - Added `context.log(...)` as a host callback for light-green agent progress messages.
 - Added a model-callable clarification tool that opens a modal, waits for user selection or custom input, and returns the selected title/detail pair.
+- Added the built-in Data Analyst agent with reusable local filesystem tools and Yandex Code Interpreter integration.
+- Added Code Interpreter rendering: generated code appears collapsed, logs/output appear in dark green, and returned files follow `/download auto|ask|skip`.
+- Added `/new` and `/help`, direct `/agent <name>` and `/model <model>` switching, dynamic Tab completion for agents/models, and a single palette Download command that opens mode selection.

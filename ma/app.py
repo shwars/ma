@@ -11,7 +11,7 @@ from textual import work
 from textual.app import App, ComposeResult, SystemCommand
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, ListItem, ListView, Static, TextArea
+from textual.widgets import Button, Collapsible, Footer, Header, Input, Label, ListItem, ListView, Static, TextArea
 from openai.types.responses import ResponseTextDeltaEvent
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
@@ -35,7 +35,13 @@ REASONING_CHOICES: list[tuple[str, str]] = [
 
 COMMAND_COMPLETIONS = [
     "/agent",
+    "/download",
+    "/download auto",
+    "/download ask",
+    "/download skip",
+    "/help",
     "/model",
+    "/new",
     "/reasoning",
     "/reasoning agent_default",
     "/reasoning none",
@@ -49,6 +55,74 @@ COMMAND_COMPLETIONS = [
     "/notes clear",
     "/exit",
 ]
+
+DOWNLOAD_MODES = {"auto", "ask", "skip"}
+
+
+def safe_download_path(directory: Path, filename: str) -> Path:
+    clean_name = Path(filename).name or "downloaded-file"
+    candidate = directory / clean_name
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem or "downloaded-file"
+    suffix = candidate.suffix
+    index = 1
+    while True:
+        next_candidate = directory / f"{stem}-{index}{suffix}"
+        if not next_candidate.exists():
+            return next_candidate
+        index += 1
+
+
+def _file_annotation_from_object(value: Any) -> dict[str, str] | None:
+    file_id = getattr(value, "file_id", None)
+    filename = getattr(value, "filename", None)
+    if file_id and filename:
+        return {"file_id": str(file_id), "filename": str(filename)}
+    if isinstance(value, dict) and value.get("file_id") and value.get("filename"):
+        return {"file_id": str(value["file_id"]), "filename": str(value["filename"])}
+    return None
+
+
+def collect_output_files(value: Any) -> list[dict[str, str]]:
+    seen: set[str] = set()
+    found: list[dict[str, str]] = []
+
+    def visit(node: Any) -> None:
+        annotation = _file_annotation_from_object(node)
+        if annotation and annotation["file_id"] not in seen:
+            seen.add(annotation["file_id"])
+            found.append(annotation)
+        if isinstance(node, dict):
+            for child in node.values():
+                visit(child)
+            return
+        if isinstance(node, (list, tuple)):
+            for child in node:
+                visit(child)
+            return
+        for attr in ("raw_item", "content", "annotations", "outputs", "output"):
+            child = getattr(node, attr, None)
+            if child is not None:
+                visit(child)
+
+    visit(value)
+    return found
+
+
+def is_code_interpreter_raw(raw: Any) -> bool:
+    raw_type = str(getattr(raw, "type", "")).lower()
+    return raw_type == "code_interpreter_call"
+
+
+def code_interpreter_logs(raw: Any) -> str:
+    lines: list[str] = []
+    for output in getattr(raw, "outputs", None) or []:
+        logs = getattr(output, "logs", None)
+        if logs:
+            lines.append(str(logs))
+    return "\n".join(lines)
 
 
 class PickerScreen(ModalScreen[str | None]):
@@ -92,6 +166,34 @@ class NoteDetailScreen(ModalScreen[None]):
                 for key, value in self.note.extra.items():
                     lines.append(f"{key}: {value}")
             yield VerticalScroll(Static("\n".join(lines)), id="note-detail-body")
+
+    def key_escape(self) -> None:
+        self.dismiss(None)
+
+
+class HelpScreen(ModalScreen[None]):
+    def compose(self) -> ComposeResult:
+        help_text = "\n".join(
+            [
+                "Commands",
+                "",
+                "/agent [name]       Select the active agent.",
+                "/model [model]      Select the active model.",
+                "/reasoning [level]  Set reasoning level for the current model.",
+                "/download [mode]    Set Code Interpreter file downloads: auto, ask, skip.",
+                "/new                Start a new chat session and clear session state.",
+                "/reload             Reload agents from disk.",
+                "/notes save         Save current notes to a markdown file.",
+                "/notes clear        Clear current notes.",
+                "/help               Show this help.",
+                "/exit               Exit the app.",
+                "",
+                "Enter sends a message. Ctrl+Enter inserts a newline. Tab completes slash commands.",
+            ]
+        )
+        with Vertical(id="help"):
+            yield Label("Help", id="help-title")
+            yield Static(help_text, id="help-body")
 
     def key_escape(self) -> None:
         self.dismiss(None)
@@ -161,6 +263,33 @@ class ClarificationScreen(ModalScreen[dict[str, str]]):
         self.dismiss({"title": "Cancelled", "detail": "User cancelled clarification."})
 
 
+class DownloadFilesScreen(ModalScreen[bool]):
+    def __init__(self, files: list[dict[str, str]]) -> None:
+        super().__init__()
+        self.files = files
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="download-files"):
+            yield Label("Download Code Interpreter files?", id="download-files-title")
+            lines = [f"- {file['filename']}" for file in self.files]
+            yield Static("\n".join(lines), id="download-files-list")
+            with Horizontal(id="download-files-actions"):
+                yield Button("Download", id="download-yes", variant="success")
+                yield Button("Skip", id="download-no")
+
+    def on_mount(self) -> None:
+        self.query_one("#download-yes", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "download-yes":
+            self.dismiss(True)
+        elif event.button.id == "download-no":
+            self.dismiss(False)
+
+    def key_escape(self) -> None:
+        self.dismiss(False)
+
+
 class ComposerTextArea(TextArea):
     async def _on_key(self, event) -> None:
         if event.key == "tab":
@@ -219,14 +348,16 @@ def render_todo_items(items: list[TodoItem]) -> Text:
     return todos
 
 
-def command_completion_matches(text: str) -> list[str]:
+def command_completion_matches(text: str, commands: list[str] | None = None) -> list[str]:
     if "\n" in text or not text.startswith("/"):
         return []
-    return [command for command in COMMAND_COMPLETIONS if command.startswith(text.lower())]
+    command_list = commands or COMMAND_COMPLETIONS
+    query = text.lower()
+    return [command for command in command_list if command.lower().startswith(query)]
 
 
-def complete_command_text(text: str) -> str:
-    matches = command_completion_matches(text)
+def complete_command_text(text: str, commands: list[str] | None = None) -> str:
+    matches = command_completion_matches(text, commands)
     if not matches:
         return text
     if len(matches) == 1:
@@ -235,9 +366,9 @@ def complete_command_text(text: str) -> str:
     return completion if len(completion) > len(text) else text
 
 
-def render_command_hint(text: str) -> Text:
+def render_command_hint(text: str, commands: list[str] | None = None) -> Text:
     hint = Text(style="dim")
-    matches = command_completion_matches(text)
+    matches = command_completion_matches(text, commands)
     if not matches:
         return hint
     if len(matches) == 1:
@@ -386,6 +517,20 @@ class MaApp(App[None]):
         height: 1fr;
     }
 
+    #help {
+        width: 76;
+        height: auto;
+        max-height: 28;
+        border: round $primary;
+        background: $surface;
+        padding: 1;
+    }
+
+    #help-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
     #clarification {
         width: 72;
         height: auto;
@@ -406,6 +551,28 @@ class MaApp(App[None]):
         margin-bottom: 1;
     }
 
+    #download-files {
+        width: 64;
+        height: auto;
+        max-height: 24;
+        border: round $primary;
+        background: $surface;
+        padding: 1;
+    }
+
+    #download-files-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #download-files-list {
+        margin-bottom: 1;
+    }
+
+    #download-files-actions {
+        height: auto;
+    }
+
     #custom-answer, #custom-submit {
         display: none;
     }
@@ -424,6 +591,15 @@ class MaApp(App[None]):
 
     .agent-log {
         color: lightgreen;
+        margin-bottom: 1;
+    }
+
+    .code-output {
+        color: darkgreen;
+        margin-bottom: 1;
+    }
+
+    .code-block {
         margin-bottom: 1;
     }
     """
@@ -451,6 +627,8 @@ class MaApp(App[None]):
         self.history: list[Any] = []
         self.busy = False
         self.starting = True
+        self.download_mode = "ask"
+        self.downloaded_file_ids: set[str] = set()
 
     def _initial_model_choice(self) -> ModelChoice | None:
         return next(
@@ -470,7 +648,7 @@ class MaApp(App[None]):
         yield Static("", id="completion-hint")
         yield ComposerTextArea(
             "",
-            placeholder="Message, or /agent /model /reasoning /reload /notes save /notes clear /exit",
+            placeholder="Message, or /agent /model /download /reasoning /new /help /exit",
             id="composer",
             show_line_numbers=False,
             soft_wrap=True,
@@ -503,7 +681,7 @@ class MaApp(App[None]):
 
     def complete_command(self) -> None:
         composer = self.query_one("#composer", ComposerTextArea)
-        completed = complete_command_text(composer.text)
+        completed = complete_command_text(composer.text, self.command_completions())
         if completed != composer.text:
             composer.load_text(completed)
             composer.move_cursor((0, len(completed)))
@@ -512,9 +690,25 @@ class MaApp(App[None]):
     def update_command_hint(self) -> None:
         composer = self.query_one("#composer", ComposerTextArea)
         hint_widget = self.query_one("#completion-hint", Static)
-        hint = render_command_hint(composer.text)
+        hint = render_command_hint(composer.text, self.command_completions())
         hint_widget.update(hint)
         hint_widget.set_class(bool(hint.plain), "visible")
+
+    def command_completions(self) -> list[str]:
+        commands = list(COMMAND_COMPLETIONS)
+        for name in self.agent_names:
+            commands.append(f"/agent {name}")
+            try:
+                display_name = self.loader.load(name).display_name
+            except Exception:
+                display_name = ""
+            if display_name and display_name.lower() != name.lower():
+                commands.append(f"/agent {display_name}")
+        for model in self.config.models:
+            commands.append(f"/model {model.id}")
+            if model.display_name and model.display_name.lower() != model.id.lower():
+                commands.append(f"/model {model.display_name}")
+        return sorted(dict.fromkeys(commands), key=str.lower)
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if event.text_area.id == "composer":
@@ -532,11 +726,24 @@ class MaApp(App[None]):
         self.run_chat(text)
 
     async def handle_command(self, text: str) -> None:
-        command = text.lower()
+        stripped = text.strip()
+        command = stripped.lower()
         if command == "/agent":
             await self.choose_agent()
+        elif command.startswith("/agent "):
+            await self.switch_agent_by_query(stripped.split(maxsplit=1)[1])
         elif command == "/model":
             await self.choose_model()
+        elif command.startswith("/model "):
+            self.switch_model_by_query(stripped.split(maxsplit=1)[1])
+        elif command == "/download":
+            await self.choose_download_mode()
+        elif command.startswith("/download "):
+            self.switch_download_mode(command.split(maxsplit=1)[1])
+        elif command == "/help":
+            await self.show_help()
+        elif command == "/new":
+            self.new_session()
         elif command == "/reasoning":
             await self.choose_reasoning()
         elif command.startswith("/reasoning "):
@@ -569,6 +776,20 @@ class MaApp(App[None]):
     async def choose_reasoning(self) -> None:
         await self._push_picker("Select reasoning", REASONING_CHOICES, self.switch_reasoning)
 
+    async def choose_download_mode(self) -> None:
+        await self._push_picker(
+            "Select download mode",
+            [
+                ("ask", "Ask before downloading"),
+                ("auto", "Download automatically"),
+                ("skip", "Skip downloads"),
+            ],
+            self.switch_download_mode,
+        )
+
+    async def show_help(self) -> None:
+        await self.push_screen(HelpScreen())
+
     async def _push_picker(
         self,
         title: str,
@@ -590,7 +811,9 @@ class MaApp(App[None]):
             self.add_event("No agents found under agents/.")
             return
 
-        active_name = self.active_agent.name if self.active_agent else self.agent_names[0]
+        active_name = self.active_agent.name if self.active_agent else (
+            "simple" if "simple" in self.agent_names else self.agent_names[0]
+        )
         if active_name not in self.agent_names:
             active_name = self.agent_names[0]
         await self.switch_agent(active_name, announce=False)
@@ -604,12 +827,29 @@ class MaApp(App[None]):
             self.add_event(f"Active agent: {self.active_agent.display_name}.")
         self.refresh_side()
 
+    async def switch_agent_by_query(self, query: str) -> None:
+        normalized = query.strip().lower()
+        for name in self.agent_names:
+            loaded = self.loader.load(name)
+            if normalized in {name.lower(), loaded.display_name.lower()}:
+                await self.switch_agent(name)
+                return
+        self.add_event(f"Unknown agent: {query}")
+
     def switch_model(self, model_id: str) -> None:
         self.selected_model = next((model for model in self.config.models if model.id == model_id), None)
         self.selected_model_object = build_model(self.config, self.selected_model)
         if self.selected_model:
             self.add_event(f"Active model: {self.selected_model.display_name}.")
         self.apply_context()
+
+    def switch_model_by_query(self, query: str) -> None:
+        normalized = query.strip().lower()
+        for model in self.config.models:
+            if normalized in {model.id.lower(), model.display_name.lower()}:
+                self.switch_model(model.id)
+                return
+        self.add_event(f"Unknown model: {query}")
 
     def switch_reasoning(self, reasoning_level: str) -> None:
         normalized = reasoning_level.strip().lower().replace("-", "_").replace(" ", "_")
@@ -626,6 +866,27 @@ class MaApp(App[None]):
         label = next(label for value, label in REASONING_CHOICES if value == normalized)
         self.add_event(f"Reasoning for {self.selected_model.display_name}: {label}.")
         self.apply_context()
+
+    def switch_download_mode(self, mode: str) -> None:
+        normalized = mode.strip().lower()
+        if normalized not in DOWNLOAD_MODES:
+            self.add_event(f"Unknown download mode: {mode}")
+            return
+        self.download_mode = normalized
+        self.add_event(f"Download mode: {normalized}.")
+
+    def new_session(self) -> None:
+        if self.busy:
+            self.add_event("Cannot start a new session while a run is active.")
+            return
+        self.history.clear()
+        self.notes_store.clear()
+        self.todo_store.clear()
+        self.downloaded_file_ids.clear()
+        transcript = self.query_one("#transcript", VerticalScroll)
+        transcript.remove_children()
+        self.refresh_side()
+        self.add_event("Started a new chat session.")
 
     @property
     def selected_reasoning_level(self) -> str | None:
@@ -664,6 +925,15 @@ class MaApp(App[None]):
     def action_choose_reasoning(self) -> None:
         self.run_worker(self.choose_reasoning())
 
+    def action_choose_download_mode(self) -> None:
+        self.run_worker(self.choose_download_mode())
+
+    def action_show_help(self) -> None:
+        self.run_worker(self.show_help())
+
+    def action_new_session(self) -> None:
+        self.new_session()
+
     def action_save_notes(self) -> None:
         self.save_notes()
 
@@ -674,6 +944,9 @@ class MaApp(App[None]):
         yield SystemCommand("Agent", "Select the active agent", self.action_choose_agent)
         yield SystemCommand("Model", "Select the active model", self.action_choose_model)
         yield SystemCommand("Reasoning", "Set reasoning level for the current model", self.action_choose_reasoning)
+        yield SystemCommand("Download", "Set Code Interpreter file download mode", self.action_choose_download_mode)
+        yield SystemCommand("New", "Start a new chat session", self.action_new_session)
+        yield SystemCommand("Help", "Show available commands", self.action_show_help)
         yield SystemCommand("Reload", "Reload agents from disk", self.action_reload_agents)
         yield SystemCommand("Notes Save", "Save session notes to markdown", self.action_save_notes)
         yield SystemCommand("Notes Clear", "Clear session notes", self.action_clear_notes)
@@ -738,7 +1011,10 @@ class MaApp(App[None]):
                     if current_assistant_block is not None:
                         current_assistant_block.finalize()
                         current_assistant_block = None
-                    self.add_event(self.describe_run_item(stream_event.item))
+                    if self.render_code_interpreter_item(stream_event.item):
+                        await self.handle_code_interpreter_files([stream_event.item])
+                    else:
+                        self.add_event(self.describe_run_item(stream_event.item))
                     self.refresh_side()
                 elif stream_event.type == "agent_updated_stream_event":
                     if current_assistant_block is not None:
@@ -753,6 +1029,7 @@ class MaApp(App[None]):
                 self.history = result.to_input_list()
             else:
                 self.history = run_input + [{"role": "assistant", "content": "".join(assistant_text_parts)}]
+            await self.handle_code_interpreter_files(getattr(result, "new_items", []))
             self.refresh_side()
         except Exception as exc:
             self.add_event(f"Run failed: {exc}")
@@ -789,6 +1066,87 @@ class MaApp(App[None]):
         if item_type == "message_output_item":
             return "Message complete."
         return f"Event: {item_type or item}"
+
+    def render_code_interpreter_item(self, item: Any) -> bool:
+        raw = getattr(item, "raw_item", None)
+        if not is_code_interpreter_raw(raw):
+            return False
+
+        code = getattr(raw, "code", None)
+        logs = code_interpreter_logs(raw)
+        if code:
+            self.add_code_block(str(code))
+        else:
+            status = getattr(raw, "status", "running")
+            self.add_event(f"Code Interpreter: {status}")
+        if logs:
+            self.add_code_output(logs)
+        return True
+
+    def add_code_block(self, code: str) -> None:
+        transcript = self.query_one("#transcript", VerticalScroll)
+        collapsible = Collapsible(
+            Static(Text(code, style="white")),
+            title="Code Interpreter code",
+            collapsed=True,
+            classes="code-block",
+        )
+        transcript.mount(collapsible)
+        transcript.scroll_end(animate=False)
+
+    def add_code_output(self, output: str) -> None:
+        transcript = self.query_one("#transcript", VerticalScroll)
+        transcript.mount(Static(Text(output, style="dark_green"), classes="code-output"))
+        transcript.scroll_end(animate=False)
+
+    async def handle_code_interpreter_files(self, items: Iterable[Any]) -> None:
+        files: list[dict[str, str]] = []
+        for item in items:
+            files.extend(collect_output_files(item))
+        new_files = [file for file in files if file["file_id"] not in self.downloaded_file_ids]
+        if not new_files:
+            return
+
+        names = ", ".join(file["filename"] for file in new_files)
+        if self.download_mode == "skip":
+            self.add_event(f"Code Interpreter files available but skipped: {names}")
+            return
+
+        should_download = self.download_mode == "auto"
+        if self.download_mode == "ask":
+            should_download = await self.ask_download_files(new_files)
+        if not should_download:
+            self.add_event(f"Code Interpreter files available: {names}")
+            return
+
+        for file in new_files:
+            path = self.download_code_interpreter_file(file["file_id"], file["filename"])
+            self.downloaded_file_ids.add(file["file_id"])
+            self.add_event(f"Downloaded {file['filename']} to {path}.")
+
+    async def ask_download_files(self, files: list[dict[str, str]]) -> bool:
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+
+        def done(result: bool) -> None:
+            if not future.done():
+                future.set_result(result)
+
+        await self.push_screen(DownloadFilesScreen(files), done)
+        return await future
+
+    def download_code_interpreter_file(self, file_id: str, filename: str) -> Path:
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url="https://ai.api.cloud.yandex.net/v1",
+            api_key=self.config.api_key,
+            project=self.config.folder_id,
+        )
+        path = safe_download_path(Path.cwd(), filename)
+        content = client.files.content(file_id)
+        path.write_bytes(content.read())
+        return path
 
     def add_event(self, text: str) -> None:
         transcript = self.query_one("#transcript", VerticalScroll)

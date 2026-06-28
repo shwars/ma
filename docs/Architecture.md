@@ -12,6 +12,7 @@
   - `OpenAIResponsesModel(model=model_uri, openai_client=...)`
 - `ma.agent_loader` discovers and imports user agents from `agents/<name>/main.py`.
 - `ma.stores` and `ma.tools` provide session-scoped notes and TODO tools.
+- `agents/data_analyst/filesystem_tools.py` provides reusable local file tools for Data Analyst-style agents.
 
 ## Agent Contract
 
@@ -79,11 +80,23 @@ When `config.json` is missing and both credentials are available, `ma` queries Y
 
 The first model option is always `Agent Default`. Selecting it means `ma` does not inject a model into the root agent, so the agent file is responsible for choosing its own model.
 
+## Built-In Data Analyst
+
+`agents/data_analyst/main.py` creates a Code Interpreter container using the Yandex/OpenAI sync client during `set_context`. It configures reusable tools from `filesystem_tools.py`:
+
+- `ls(mask=None)`
+- `inspect(filename)`
+- `upload(filenames)`
+
+The tools are rooted at `Path.cwd()`, reject absolute paths and `..`, and inspect CSV/XLS/XLSX files with pandas. The `upload` tool copies selected local files into the active Code Interpreter container. The agent instructions require all produced files to be returned in the final answer.
+
 ## UI Lifecycle
 
 The transcript initially mounts a lightweight splash screen and keeps the composer hidden and unfocused. After Textual's first refresh, `ma` starts background initialization for model construction and agent loading, then removes the splash and focuses the composer when startup completes.
 
-The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types.
+The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types. Completion candidates are dynamic: built-in commands plus loaded agent names/display names and configured model IDs/display names.
+
+`/new` starts a fresh chat session by clearing conversation history, session notes/TODOs, transcript widgets, and downloaded Code Interpreter file tracking. It keeps the selected agent, model, and reasoning settings.
 
 ## Tools
 
@@ -120,7 +133,21 @@ It displays:
 - raw text deltas as assistant output
 - run item events as tool-call/tool-output status lines
 - agent update events as handoff status lines
+- Code Interpreter code as collapsed expandable blocks
+- Code Interpreter logs/output in dark green
 
 Assistant text is streamed as plain text inside the active output block. When the block ends, either before a tool/agent event or at run completion, `ma` finalizes the whole block as Markdown so tables, code fences, lists, and other multi-token Markdown constructs render consistently.
 
 After a run, the app stores `result.to_input_list()` when available so future turns preserve SDK conversation history.
+
+## Code Interpreter Files
+
+`ma` scans streaming run items and final `result.new_items` for file annotations containing `file_id` and `filename`.
+
+The download policy is controlled by:
+
+- `/download auto`: download new files immediately.
+- `/download ask`: ask before downloading. This is the default.
+- `/download skip`: show file names but do not download.
+
+Downloaded files are written to `Path.cwd()`. Existing filenames are preserved by suffixing new paths, such as `chart-1.png`. Downloaded file IDs are tracked per session to avoid duplicate downloads.

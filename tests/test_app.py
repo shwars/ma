@@ -1,22 +1,26 @@
 from __future__ import annotations
 
 import asyncio
-from types import ModuleType
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
 from textual.containers import HorizontalScroll
-from textual.widgets import ListView, Static
+from textual.widgets import Collapsible, ListView, Static
 
 from ma.agent_loader import LoadedAgent
 from ma.app import (
     AssistantBlock,
     ClarificationScreen,
     ComposerTextArea,
+    HelpScreen,
     MaApp,
+    collect_output_files,
     complete_command_text,
     render_command_hint,
     render_todo_items,
+    safe_download_path,
 )
 from ma.stores import TodoItem
 
@@ -58,7 +62,8 @@ def test_composer_enter_submits_and_ctrl_enter_inserts_newline():
 
 def test_command_completion_helpers_complete_common_prefix_and_single_match():
     assert complete_command_text("/mo") == "/model"
-    assert complete_command_text("/n") == "/notes "
+    assert complete_command_text("/n") == "/n"
+    assert complete_command_text("/note") == "/notes "
     assert complete_command_text("/notes c") == "/notes clear"
     assert complete_command_text("hello") == "hello"
 
@@ -87,7 +92,136 @@ def test_composer_tab_completes_command_and_updates_hint():
             hint = app.query_one("#completion-hint", Static)
             assert composer.text == "/model"
             assert hint.has_class("visible")
-            assert "Press Enter" in hint.content.plain
+            assert "/model" in hint.content.plain
+
+    asyncio.run(run())
+
+
+def test_dynamic_command_completion_includes_agent_and_model(tmp_path):
+    async def run() -> None:
+        agents_dir = tmp_path / "agents"
+        agent_dir = agents_dir / "sample"
+        agent_dir.mkdir(parents=True)
+        (agent_dir / "main.py").write_text(
+            "agent = object()\ndef get_props():\n    return {'display_name': 'Sample Agent'}\n",
+            encoding="utf-8",
+        )
+
+        async with MaApp(config_path="missing.json", agents_dir=agents_dir).run_test() as pilot:
+            for _ in range(5):
+                await pilot.pause()
+                if pilot.app.active_agent is not None:
+                    break
+
+            completions = pilot.app.command_completions()
+
+            assert "/agent sample" in completions
+            assert "/agent Sample Agent" in completions
+            assert "/model Agent Default" in completions
+
+    asyncio.run(run())
+
+
+def test_direct_agent_and_model_commands_switch_selection(tmp_path):
+    async def run() -> None:
+        agents_dir = tmp_path / "agents"
+        for name in ["one", "two"]:
+            agent_dir = agents_dir / name
+            agent_dir.mkdir(parents=True)
+            (agent_dir / "main.py").write_text(
+                f"agent = object()\ndef get_props():\n    return {{'display_name': '{name.title()} Agent'}}\n",
+                encoding="utf-8",
+            )
+
+        async with MaApp(config_path="missing.json", agents_dir=agents_dir).run_test() as pilot:
+            for _ in range(5):
+                await pilot.pause()
+                if pilot.app.active_agent is not None:
+                    break
+
+            await pilot.app.handle_command("/agent Two Agent")
+            await pilot.app.handle_command("/model Agent Default")
+
+            assert pilot.app.active_agent is not None
+            assert pilot.app.active_agent.name == "two"
+            assert pilot.app.selected_model is not None
+            assert pilot.app.selected_model.display_name == "Agent Default"
+
+    asyncio.run(run())
+
+
+def test_download_command_updates_mode():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+
+            await app.handle_command("/download auto")
+            assert app.download_mode == "auto"
+
+            await app.handle_command("/download skip")
+            assert app.download_mode == "skip"
+
+            await app.handle_command("/download ask")
+            assert app.download_mode == "ask"
+
+    asyncio.run(run())
+
+
+def test_download_command_without_argument_opens_picker():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            await pilot.app.handle_command("/download")
+            await pilot.pause()
+
+            assert getattr(pilot.app.screen, "title", "") == "Select download mode"
+
+    asyncio.run(run())
+
+
+def test_palette_has_single_download_command():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            titles = [command.title for command in pilot.app.get_system_commands(pilot.app.screen)]
+
+            assert "Download" in titles
+            assert "Download Auto" not in titles
+            assert "Download Ask" not in titles
+            assert "Download Skip" not in titles
+
+    asyncio.run(run())
+
+
+def test_new_command_resets_current_session_state():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            app.history.append({"role": "user", "content": "hello"})
+            app.notes_store.create_note("cat", "title", "body")
+            app.todo_store.create_todo("todo")
+            app.downloaded_file_ids.add("file-1")
+            transcript = app.query_one("#transcript")
+            await transcript.mount(Static("old"))
+
+            await app.handle_command("/new")
+            await pilot.pause()
+
+            assert app.history == []
+            assert app.notes_store.notes == []
+            assert app.todo_store.items == []
+            assert app.downloaded_file_ids == set()
+            assert any("Started a new chat session." in str(child.content) for child in transcript.children)
+
+    asyncio.run(run())
+
+
+def test_help_command_opens_help_screen():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            await pilot.app.handle_command("/help")
+            await pilot.pause()
+
+            assert isinstance(pilot.app.screen, HelpScreen)
+            assert "/agent [name]" in str(pilot.app.screen.query_one("#help-body", Static).content)
 
     asyncio.run(run())
 
@@ -102,6 +236,26 @@ def test_startup_splash_is_mounted_before_background_startup_finishes():
             assert "μA" in splash.content.plain
             assert not composer.has_class("ready")
             assert pilot.app.focused is not composer
+
+    asyncio.run(run())
+
+
+def test_startup_prefers_simple_agent_when_available(tmp_path):
+    async def run() -> None:
+        agents_dir = tmp_path / "agents"
+        for name in ["data_analyst", "simple"]:
+            agent_dir = agents_dir / name
+            agent_dir.mkdir(parents=True)
+            (agent_dir / "main.py").write_text("agent = object()\n", encoding="utf-8")
+
+        async with MaApp(config_path="missing.json", agents_dir=agents_dir).run_test() as pilot:
+            for _ in range(5):
+                await pilot.pause()
+                if pilot.app.active_agent is not None:
+                    break
+
+            assert pilot.app.active_agent is not None
+            assert pilot.app.active_agent.name == "simple"
 
     asyncio.run(run())
 
@@ -171,6 +325,99 @@ def test_agent_log_renders_light_green_message():
             assert isinstance(log_widget.content, Text)
             assert log_widget.content.plain == "Checking source quality"
             assert str(log_widget.content.style) == "light_green"
+
+    asyncio.run(run())
+
+
+def test_code_interpreter_item_renders_collapsed_code_and_dark_green_logs():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            raw = SimpleNamespace(
+                type="code_interpreter_call",
+                code="print('hello')",
+                outputs=[SimpleNamespace(type="logs", logs="hello\n")],
+            )
+
+            assert pilot.app.render_code_interpreter_item(SimpleNamespace(raw_item=raw)) is True
+            await pilot.pause()
+
+            transcript = pilot.app.query_one("#transcript")
+            code = transcript.query_one(Collapsible)
+            output = transcript.query_one(".code-output", Static)
+
+            assert code.collapsed is True
+            assert "Code Interpreter code" in code.title
+            assert isinstance(output.content, Text)
+            assert output.content.plain == "hello\n"
+            assert str(output.content.style) == "dark_green"
+
+    asyncio.run(run())
+
+
+def test_safe_download_path_avoids_collisions_and_strips_directories(tmp_path):
+    (tmp_path / "chart.png").write_text("old", encoding="utf-8")
+
+    path = safe_download_path(tmp_path, "../chart.png")
+
+    assert path == tmp_path / "chart-1.png"
+
+
+def test_collect_output_files_deduplicates_nested_annotations():
+    item = {
+        "content": [
+            {"annotations": [{"file_id": "file-1", "filename": "a.csv"}]},
+            {"annotations": [{"file_id": "file-1", "filename": "a.csv"}]},
+            {"annotations": [{"file_id": "file-2", "filename": "b.png"}]},
+        ]
+    }
+
+    assert collect_output_files(item) == [
+        {"file_id": "file-1", "filename": "a.csv"},
+        {"file_id": "file-2", "filename": "b.png"},
+    ]
+
+
+def test_download_policy_auto_skip_and_duplicate_tracking(tmp_path):
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            downloaded: list[tuple[str, str]] = []
+
+            def fake_download(file_id: str, filename: str) -> Path:
+                downloaded.append((file_id, filename))
+                return tmp_path / filename
+
+            app.download_code_interpreter_file = fake_download
+            app.download_mode = "auto"
+            item = {"content": [{"annotations": [{"file_id": "file-1", "filename": "chart.png"}]}]}
+
+            await app.handle_code_interpreter_files([item])
+            await app.handle_code_interpreter_files([item])
+
+            assert downloaded == [("file-1", "chart.png")]
+            assert app.downloaded_file_ids == {"file-1"}
+
+            app.download_mode = "skip"
+            item2 = {"content": [{"annotations": [{"file_id": "file-2", "filename": "other.png"}]}]}
+            await app.handle_code_interpreter_files([item2])
+
+            assert downloaded == [("file-1", "chart.png")]
+            assert app.downloaded_file_ids == {"file-1"}
+
+    asyncio.run(run())
+
+
+def test_download_ask_modal_returns_choice():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            task = asyncio.create_task(
+                pilot.app.ask_download_files([{"file_id": "file-1", "filename": "chart.png"}])
+            )
+            await pilot.pause()
+
+            await pilot.press("enter")
+
+            assert await task is True
 
     asyncio.run(run())
 
@@ -273,6 +520,10 @@ def test_todo_pane_uses_horizontal_scroll_and_formatted_block():
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:
             app = pilot.app
+            for _ in range(5):
+                await pilot.pause()
+                if not app.starting:
+                    break
             app.active_agent = LoadedAgent(
                 name="todo",
                 module=ModuleType("todo"),
