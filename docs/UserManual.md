@@ -77,7 +77,7 @@ uv run ma
 The command palette exposes the same main app commands: Agent, Model, Reasoning, Theme, Download, New, Help, Reload, Notes Save, Notes Clear, and Exit.
 When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names, model names, and theme names.
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
-The top status line shows the active agent/model plus current run status: Ready, Working, Needs input, or Executing code.
+The top status line shows the active agent/model, current reasoning level, and current run status: Ready, Working, Needs input, or Executing code.
 Modal windows such as Help, selection pickers, clarification prompts, and download confirmation appear centered over the app.
 
 ## Built-In Agents
@@ -85,6 +85,7 @@ Modal windows such as Help, selection pickers, clarification prompts, and downlo
 - `simple`: a concise assistant with web search.
 - `deep_research`: a research assistant that uses web search, notes, and TODOs.
 - `data_analyst`: a local-data analyst that can list and inspect files in the current directory, upload selected files to Code Interpreter, run analysis, and return generated files.
+- `pro_analyst`: an advanced local-data analyst with Data Analyst capabilities plus markdown skills, TODO planning, safe local file read/write/edit tools, and allowlisted `cmd`/`bash`/`ssh` command execution.
 
 The Data Analyst local filesystem tools are:
 
@@ -92,8 +93,36 @@ The Data Analyst local filesystem tools are:
 - `inspect(filename)`: inspect CSV/XLS/XLSX files, including sheets, shape, columns, dtypes, and first rows.
 - `upload(filenames)`: upload selected local files into the active Code Interpreter container.
 
+Pro Analyst adds:
+
+- `list_skills()`: list skills from `skills/<skill_id>/skill.md` in the current directory and from bundled Pro Analyst skills.
+- `load_skill(skill_id)`: load full instructions for one skill.
+- `read_file(filename, max_bytes=200000)`: read a local UTF-8 text file.
+- `write_file(filename, content, overwrite=False)`: write a local UTF-8 text file.
+- `edit_file(filename, unified_diff)`: apply a unified diff to a local UTF-8 text file.
+- `execute_command(command, args=None, timeout_seconds=60)`: run only `cmd`, `bash`, or `ssh`.
+
+Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so changing `/model` or `/reasoning` does not create a new container. Uploads and Code Interpreter calls are kept on that same container. Its prompt includes a current skill metadata snapshot, and the agent is instructed to call `list_skills()` and `load_skill(...)` before specialized work. Pro Analyst also uses TODO tools for visible multi-step planning.
+
+Bundled Pro Analyst skills include PPTX presentation, DOCX document, guided data exploration, and markdown-to-PDF workflows. PPTX/DOCX files are generated inside Code Interpreter and returned for download; `ma` does not install Office-generation libraries locally.
+
+Custom Pro Analyst skills use this shape:
+
+```markdown
+---
+id: my_skill
+name: My Skill
+description: What this skill helps with.
+tags: [reporting, data]
+---
+
+Skill instructions for the agent.
+```
+
 Generated Code Interpreter code is shown as a collapsed expandable block. Code output/logs are shown in dark green. The agent is instructed to return every file it creates so `ma` can download or report it according to `/download`.
 When a returned file already exists in the working directory with the same name, size, and checksum, `ma` skips saving a duplicate. If the name exists but the content differs, it writes a suffixed file such as `chart-1.png`.
+
+When a model streams reasoning, `ma` shows it live in gray and then reformats the completed reasoning block as Markdown.
 
 When the active agent uses notes or TODOs, the right pane shows that state live during the chat.
 Notes and TODOs are displayed in separate panes. If only one pane is enabled for the selected agent, it uses the full right-side height.

@@ -13,6 +13,7 @@
 - `ma.agent_loader` discovers and imports user agents from `agents/<name>/main.py`.
 - `ma.stores` and `ma.tools` provide session-scoped notes and TODO tools.
 - `agents/data_analyst/filesystem_tools.py` provides reusable local file tools for Data Analyst-style agents.
+- `agents/pro_analyst/skill_tools.py` and `filesystem_tools.py` provide markdown skill loading plus advanced local file/command tools.
 
 ## Agent Contract
 
@@ -94,11 +95,26 @@ The first model option is always `Agent Default`. Selecting it means `ma` does n
 
 The tools are rooted at `Path.cwd()`, reject absolute paths and `..`, and inspect CSV/XLS/XLSX files with pandas. The `upload` tool copies selected local files into the active Code Interpreter container. The agent instructions require all produced files to be returned in the final answer.
 
+## Built-In Pro Analyst
+
+`agents/pro_analyst/main.py` copies the Data Analyst architecture and adds markdown skills plus advanced local tools:
+
+- host TODO tools for visible multi-step planning
+- `list_skills()` and `load_skill(skill_id)`
+- `read_file(filename, max_bytes=200000)`
+- `write_file(filename, content, overwrite=False)`
+- `edit_file(filename, unified_diff)`
+- `execute_command(command, args=None, timeout_seconds=60)`
+
+Skills are folders containing `skill.md` frontmatter and instructions. Pro Analyst searches both `Path.cwd()` and `agents/pro_analyst`; current-directory skills override bundled skills with the same ID. `set_context` injects a current skill metadata snapshot into the agent instructions, while the agent is still instructed to call `list_skills()` dynamically before specialized work.
+
+Pro Analyst keeps a module-level Code Interpreter container ID and creates the container lazily. Model or reasoning changes rebuild the tool list but reuse the same container ID for both `upload` and `CodeInterpreterTool`. A `/reload` re-imports the module and may create a new container. Bundled PPTX/DOCX skills instruct the agent to build those files in Code Interpreter and return them for download, so local `ma` dependencies stay minimal.
+
 ## UI Lifecycle
 
 The transcript initially mounts a lightweight splash screen and keeps the composer hidden and unfocused. After Textual's first refresh, `ma` starts background initialization for model construction and agent loading, then removes the splash and focuses the composer when startup completes.
 
-The top status line shows the active agent, active model, download mode, and current status. Status values are color-coded: Ready is white, Working is light green, Needs input is blue, and Executing code is yellow.
+The top status line shows the active agent, active model, reasoning level, download mode, and current status. Status values are color-coded: Ready is white, Working is light green, Needs input is blue, and Executing code is yellow.
 
 Modal screens are explicitly centered in Textual CSS so selectors, help, clarification, note detail, and download confirmation appear over the middle of the app.
 
@@ -139,14 +155,14 @@ The UI calls `Runner.run_streamed(active_agent.agent, input_items)`.
 It displays:
 
 - raw text deltas as assistant output
-- reasoning text/summary deltas as a live reasoning block
+- reasoning text/summary deltas as a live gray reasoning block
 - run item events as tool-call/tool-output status lines
 - reasoning items as reasoning status lines when the provider includes reasoning summaries or text
 - agent update events as handoff status lines
 - Code Interpreter code as collapsed expandable blocks
 - Code Interpreter logs/output in dark green
 
-Assistant text is streamed as plain text inside the active output block. When the block ends, either before a tool/agent event or at run completion, `ma` finalizes the whole block as Markdown so tables, code fences, lists, and other multi-token Markdown constructs render consistently.
+Assistant text and reasoning text are streamed as plain text inside their active output blocks. When a block ends, either before a tool/agent event or at run completion, `ma` finalizes the whole block as Markdown so tables, code fences, lists, and other multi-token Markdown constructs render consistently. If reasoning has already streamed, a matching completed reasoning run item is skipped to avoid duplicate transcript entries.
 
 After a run, the app stores `result.to_input_list()` when available so future turns preserve SDK conversation history.
 

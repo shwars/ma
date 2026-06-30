@@ -26,6 +26,7 @@ from ma.app import (
     render_todo_items,
     safe_download_path,
     same_file_content,
+    should_skip_completed_reasoning,
     write_downloaded_file,
 )
 from ma.stores import TodoItem
@@ -37,6 +38,10 @@ def test_composer_enter_submits_and_ctrl_enter_inserts_newline():
 
         async with MaApp(config_path="missing.json").run_test() as pilot:
             app = pilot.app
+            for _ in range(10):
+                await pilot.pause()
+                if not app.starting:
+                    break
 
             async def fake_submit() -> None:
                 composer = app.query_one(ComposerTextArea)
@@ -371,7 +376,13 @@ def test_reasoning_block_streams_text_as_it_arrives():
             block.append("thought")
 
             assert isinstance(block.widget.content, Text)
-            assert block.widget.content.plain == "Reasoning\nFirst thought"
+            assert block.widget.content.plain == "First thought"
+            assert str(block.widget.content.style) == "dim"
+
+            block.finalize()
+
+            assert isinstance(block.widget.content, RichMarkdown)
+            assert block.widget.content.markup == "First thought"
 
     asyncio.run(run())
 
@@ -524,6 +535,8 @@ def test_reasoning_items_render_summary_text():
 
     assert reasoning_item_text(item) == "Need to compare the uploaded tables."
     assert app.describe_run_item(item) == "Reasoning: Need to compare the uploaded tables."
+    assert should_skip_completed_reasoning(item, "Need to compare the uploaded tables.") is True
+    assert should_skip_completed_reasoning(item, "") is False
 
 
 def test_status_header_displays_agent_status_and_metadata():
@@ -548,6 +561,7 @@ def test_status_header_displays_agent_status_and_metadata():
             assert isinstance(status, Text)
             assert "● Working" in status.plain
             assert "Agent: Sample" in status.plain
+            assert "Reasoning: Agent Default" in status.plain
             assert any(str(span.style) == "light_green" for span in status.spans)
 
     asyncio.run(run())

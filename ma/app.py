@@ -204,6 +204,20 @@ def reasoning_item_text(item: Any) -> str:
     return "\n".join(unique)
 
 
+def _normalized_reasoning(text: str) -> str:
+    return " ".join(text.split())
+
+
+def should_skip_completed_reasoning(item: Any, streamed_reasoning_text: str) -> bool:
+    if not is_reasoning_item(item):
+        return False
+    streamed = _normalized_reasoning(streamed_reasoning_text)
+    if not streamed:
+        return False
+    completed = _normalized_reasoning(reasoning_item_text(item))
+    return not completed or completed in streamed or streamed in completed
+
+
 class PickerScreen(ModalScreen[str | None]):
     def __init__(self, title: str, choices: list[tuple[str, str]]) -> None:
         super().__init__()
@@ -421,6 +435,7 @@ class ReasoningBlock:
     def __init__(self) -> None:
         self.widget = Static("", classes="reasoning-message")
         self.parts: list[str] = []
+        self.finalized = False
 
     @property
     def text(self) -> str:
@@ -430,11 +445,19 @@ class ReasoningBlock:
         await parent.mount(self.widget)
 
     def append(self, delta: str) -> None:
+        if self.finalized:
+            return
         self.parts.append(delta)
-        text = Text()
-        text.append("Reasoning\n", style="bold dodger_blue1")
-        text.append(self.text, style="dodger_blue1")
+        text = Text(style="dim")
+        text.append(self.text)
         self.widget.update(text)
+
+    def finalize(self) -> None:
+        if self.finalized:
+            return
+        self.finalized = True
+        if self.text.strip():
+            self.widget.update(RichMarkdown(self.text, style="dim"))
 
 
 def render_todo_items(items: list[TodoItem]) -> Text:
@@ -593,7 +616,7 @@ class MaApp(App[None]):
     }
 
     .reasoning-message {
-        color: dodgerblue;
+        color: $text-muted;
         margin-bottom: 1;
     }
 
@@ -811,10 +834,21 @@ class MaApp(App[None]):
         style = AGENT_STATUS_STYLES.get(self.agent_status, "white")
         agent = self.active_agent.display_name if self.active_agent else "No agent"
         model = self.selected_model.display_name if self.selected_model else "No model"
+        reasoning = self.reasoning_display_name()
         status = Text()
         status.append(f"● {self.agent_status}", style=style)
-        status.append(f"  ma  Agent: {agent}  Model: {model}  Download: {self.download_mode}", style="white")
+        status.append(
+            f"  ma  Agent: {agent}  Model: {model}  Reasoning: {reasoning}  Download: {self.download_mode}",
+            style="white",
+        )
         header.first().update(status)
+
+    def reasoning_display_name(self) -> str:
+        if not self.selected_model:
+            return "Agent Default"
+        level = self.reasoning_by_model_id.get(self.selected_model.id)
+        value = "agent_default" if level is None else level
+        return next(label for choice, label in REASONING_CHOICES if choice == value)
 
     def complete_command(self) -> None:
         composer = self.query_one("#composer", ComposerTextArea)
@@ -1019,6 +1053,7 @@ class MaApp(App[None]):
         label = next(label for value, label in REASONING_CHOICES if value == normalized)
         self.add_event(f"Reasoning for {self.selected_model.display_name}: {label}.")
         self.apply_context()
+        self.update_status_header()
 
     def switch_download_mode(self, mode: str) -> None:
         normalized = mode.strip().lower()
@@ -1163,6 +1198,7 @@ class MaApp(App[None]):
             assistant_text_parts: list[str] = []
             current_assistant_block: AssistantBlock | None = None
             current_reasoning_block: ReasoningBlock | None = None
+            streamed_reasoning_parts: list[str] = []
 
             from agents import Runner
 
@@ -1171,7 +1207,9 @@ class MaApp(App[None]):
                 if stream_event.type == "raw_response_event" and isinstance(
                     stream_event.data, ResponseTextDeltaEvent
                 ):
-                    current_reasoning_block = None
+                    if current_reasoning_block is not None:
+                        current_reasoning_block.finalize()
+                        current_reasoning_block = None
                     delta = getattr(stream_event.data, "delta", "")
                     if delta and (current_assistant_block is not None or delta.strip()):
                         if current_assistant_block is None:
@@ -1190,16 +1228,24 @@ class MaApp(App[None]):
                             current_reasoning_block = ReasoningBlock()
                             await current_reasoning_block.mount(transcript)
                         current_reasoning_block.append(delta)
+                        streamed_reasoning_parts.append(delta)
                         transcript.scroll_end(animate=False)
                 elif stream_event.type == "run_item_stream_event":
                     if current_assistant_block is not None:
                         current_assistant_block.finalize()
                         current_assistant_block = None
-                    current_reasoning_block = None
+                    if current_reasoning_block is not None:
+                        current_reasoning_block.finalize()
+                        current_reasoning_block = None
                     if self.render_code_interpreter_item(stream_event.item):
                         await self.handle_code_interpreter_files([stream_event.item])
                     else:
-                        description = self.describe_run_item(stream_event.item)
+                        description = None
+                        if not should_skip_completed_reasoning(
+                            stream_event.item,
+                            "".join(streamed_reasoning_parts),
+                        ):
+                            description = self.describe_run_item(stream_event.item)
                         if description:
                             self.add_event(description)
                     self.refresh_side()
@@ -1207,11 +1253,15 @@ class MaApp(App[None]):
                     if current_assistant_block is not None:
                         current_assistant_block.finalize()
                         current_assistant_block = None
-                    current_reasoning_block = None
+                    if current_reasoning_block is not None:
+                        current_reasoning_block.finalize()
+                        current_reasoning_block = None
                     self.add_event(f"Agent: {stream_event.new_agent.name}")
 
             if current_assistant_block is not None:
                 current_assistant_block.finalize()
+            if current_reasoning_block is not None:
+                current_reasoning_block.finalize()
 
             if hasattr(result, "to_input_list"):
                 self.history = result.to_input_list()

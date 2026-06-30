@@ -30,3 +30,18 @@
 - Render reasoning stream items with extracted reasoning text/summaries instead of generic event labels.
 - Centered modal windows and filtered Textual's built-in theme command so the palette shows one Theme entry.
 - Added live streaming for reasoning text/summary deltas when models emit them.
+- Changed reasoning rendering to stream in gray, finalize as Markdown, and suppress duplicate completed reasoning items.
+- Added the active reasoning level to the top status line.
+
+## 2026-06-30
+
+- Added the built-in Pro Analyst agent with Data Analyst functionality, markdown skill loading, advanced local file tools, and allowlisted command execution.
+- Added bundled Pro Analyst skills for PPTX, DOCX, guided data exploration, and markdown-to-PDF workflows.
+- Kept PPTX/DOCX generation inside Code Interpreter so local `ma` dependencies do not grow.
+
+## 2026-07-01
+
+- Changed Pro Analyst to reuse one Code Interpreter container across model/reasoning context updates.
+- Kept Pro Analyst upload and Code Interpreter tools wired to the same reused container ID.
+- Added a skill metadata snapshot to Pro Analyst instructions and strengthened the requirement to call `list_skills()` and `load_skill(...)`.
+- Let Pro Analyst use host TODO tools and show the TODO pane for multi-step analysis plans.

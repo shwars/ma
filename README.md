@@ -7,11 +7,11 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Dynamic agents loaded from `agents/<name>/main.py`
 - Streaming terminal chat UI
 - Markdown formatting after each streamed assistant block completes
-- Streaming reasoning output when the provider emits reasoning deltas
+- Streaming gray reasoning output that finalizes as Markdown when the reasoning block completes
 - Yandex Cloud OpenAI-compatible model runtime
 - Commands for agent/model selection, reload, and notes
 - Code Interpreter output display with generated-file download controls
-- A top status line showing Ready, Working, Needs input, or Executing code
+- A top status line showing Ready, Working, Needs input, Executing code, and the active reasoning level
 - Command palette entries matching the main slash commands
 - Tab completion and muted live hints for slash commands
 - Startup splash screen while agents and models initialize
@@ -94,9 +94,25 @@ While typing a slash command, press Tab to complete the current prefix. `ma` als
 - `simple`: a concise assistant with web search.
 - `deep_research`: a research assistant that uses web search, notes, and TODOs.
 - `data_analyst`: a local-data analyst that can list/inspect local CSV/XLS/XLSX files, upload selected files to Code Interpreter, run analysis, and return generated files.
+- `pro_analyst`: an advanced data analyst with Data Analyst capabilities plus skill loading, TODO planning, safe local file read/write/edit tools, and allowlisted command execution.
 
 For Code Interpreter runs, generated code appears as a collapsed expandable block. Code output/logs are shown in dark green. Files returned by Code Interpreter follow the active `/download` mode.
 If a returned file already exists with the same name, size, and checksum, `ma` treats it as already downloaded instead of writing a suffixed duplicate.
+
+Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so `/model` and `/reasoning` changes keep uploads and Code Interpreter calls on the same container. Its prompt includes a current skill metadata snapshot, and it is instructed to call `list_skills()` and `load_skill(...)` before specialized work. Skills live in `skills/<skill_id>/skill.md` under either the current working directory or `agents/pro_analyst/`. Current-directory skills override bundled skills. PPTX/DOCX skills generate files inside Code Interpreter, not through local `ma` dependencies.
+
+Minimal skill format:
+
+```markdown
+---
+id: my_skill
+name: My Skill
+description: What this skill helps with.
+tags: [reporting, data]
+---
+
+Skill instructions for the agent.
+```
 
 ## Creating Agents
 

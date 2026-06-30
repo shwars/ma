@@ -59,3 +59,15 @@ def test_builtin_data_analyst_agent_is_discoverable_and_loadable():
 
     assert loaded.display_name == "Data Analyst"
     assert loaded.agent is not None
+
+
+def test_builtin_pro_analyst_agent_is_discoverable_and_loadable():
+    loader = AgentLoader("agents")
+
+    assert "pro_analyst" in loader.discover()
+
+    loaded = loader.load("pro_analyst")
+
+    assert loaded.display_name == "Pro Analyst"
+    assert loaded.uses_todo is True
+    assert loaded.agent is not None
