@@ -45,3 +45,6 @@
 - Kept Pro Analyst upload and Code Interpreter tools wired to the same reused container ID.
 - Added a skill metadata snapshot to Pro Analyst instructions and strengthened the requirement to call `list_skills()` and `load_skill(...)`.
 - Let Pro Analyst use host TODO tools and show the TODO pane for multi-step analysis plans.
+- Added double-Escape interruption for active chat runs by tracking the Textual worker, cancelling it on the second Escape within 2 seconds, preserving partial transcript output, and avoiding fake assistant history after cancellation.
+- Fixed Pro Analyst upload guidance by returning the API-reported Code Interpreter `container_path`, instructing the agent to use it exactly, and recreating the container if the host client changes.
+- Changed Pro Analyst skill handling to use the context-built metadata snapshot before data exploration instead of refreshing skill metadata during normal execution, and strengthened upload-before-analysis instructions.

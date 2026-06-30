@@ -149,7 +149,12 @@ def test_pro_analyst_reuses_container_and_keeps_upload_consistent(tmp_path):
             @staticmethod
             def create(container_id, file):
                 uploads.append((container_id, Path(file.name).name))
-                return SimpleNamespace(id="file-data")
+                return SimpleNamespace(
+                    id="file-data",
+                    container_id=container_id,
+                    path="/mnt/data/data.csv",
+                    bytes=Path(file.name).stat().st_size,
+                )
 
         @staticmethod
         def create(name):
@@ -178,7 +183,55 @@ def test_pro_analyst_reuses_container_and_keeps_upload_consistent(tmp_path):
     assert created == ["ma-pro-analysis"]
     assert main.get_container_id() == "container-1"
     assert uploads == [("container-1", "data.csv")]
-    assert result == {"files": [{"name": "data.csv", "id": "file-data"}]}
+    assert result["files"] == [
+        {
+            "name": "data.csv",
+            "id": "file-data",
+            "container_id": "container-1",
+            "container_path": "/mnt/data/data.csv",
+            "bytes": data_file.stat().st_size,
+        }
+    ]
+    assert "container_path" in result["code_interpreter_note"]
+    code_tools = [tool for tool in main.agent.tools if getattr(tool, "tool_config", {}).get("type") == "code_interpreter"]
+    assert code_tools[-1].tool_config["container"] == "container-1"
+
+
+def test_pro_analyst_recreates_container_when_client_changes():
+    main = load_pro_main()
+    created: list[tuple[str, str]] = []
+
+    class Containers:
+        def __init__(self, container_id: str) -> None:
+            self.container_id = container_id
+
+        def create(self, name):
+            created.append((self.container_id, name))
+            return SimpleNamespace(id=self.container_id)
+
+    first_context = SimpleNamespace(
+        client=SimpleNamespace(containers=Containers("container-1")),
+        model=None,
+        todo_tools=[],
+        clarification_tools=[],
+        log=lambda message: None,
+    )
+    second_context = SimpleNamespace(
+        client=SimpleNamespace(containers=Containers("container-2")),
+        model=None,
+        todo_tools=[],
+        clarification_tools=[],
+        log=lambda message: None,
+    )
+
+    main.set_context(first_context)
+    main.set_context(first_context)
+    main.set_context(second_context)
+
+    assert created == [("container-1", "ma-pro-analysis"), ("container-2", "ma-pro-analysis")]
+    assert main.get_container_id() == "container-2"
+    code_tools = [tool for tool in main.agent.tools if getattr(tool, "tool_config", {}).get("type") == "code_interpreter"]
+    assert code_tools[-1].tool_config["container"] == "container-2"
 
 
 def test_pro_analyst_instructions_include_skill_snapshot_and_require_tool_loading(tmp_path):
@@ -208,8 +261,11 @@ def test_pro_analyst_instructions_include_skill_snapshot_and_require_tool_loadin
 
     assert "Available skills snapshot" in main.agent.instructions
     assert "pptx_presentation" in main.agent.instructions
-    assert "call list_skills" in main.agent.instructions
+    assert "review that snapshot before using ls" in main.agent.instructions
+    assert "Do not reload skill metadata during execution" in main.agent.instructions
+    assert "Do not call list_skills unless the user explicitly asks" in main.agent.instructions
     assert "load_skill(skill_id)" in main.agent.instructions
+    assert "Always upload every local data file needed for analysis" in main.agent.instructions
 
 
 def test_pro_analyst_context_includes_todo_tools(tmp_path):

@@ -229,6 +229,87 @@ def test_palette_has_single_theme_command():
     asyncio.run(run())
 
 
+def test_first_escape_during_run_shows_interrupt_hint():
+    class FakeWorker:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            worker = FakeWorker()
+            app.busy = True
+            app.active_run_worker = worker
+
+            assert app.handle_escape_interrupt(now=10.0) is True
+            await pilot.pause()
+
+            assert worker.cancelled is False
+            assert app.interrupt_requested is False
+            transcript = app.query_one("#transcript")
+            assert any(
+                "Press Esc again to interrupt the current run." in str(child.content)
+                for child in transcript.children
+            )
+
+    asyncio.run(run())
+
+
+def test_second_escape_within_timeout_cancels_active_worker():
+    class FakeWorker:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            worker = FakeWorker()
+            app.busy = True
+            app.active_run_worker = worker
+
+            assert app.handle_escape_interrupt(now=10.0) is True
+            assert app.handle_escape_interrupt(now=11.0) is True
+            await pilot.pause()
+
+            assert worker.cancelled is True
+            assert app.interrupt_requested is True
+            transcript = app.query_one("#transcript")
+            assert any("Interrupt requested." in str(child.content) for child in transcript.children)
+
+    asyncio.run(run())
+
+
+def test_escape_after_timeout_starts_new_interrupt_window():
+    class FakeWorker:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            worker = FakeWorker()
+            app.busy = True
+            app.active_run_worker = worker
+
+            assert app.handle_escape_interrupt(now=10.0) is True
+            assert app.handle_escape_interrupt(now=13.0) is True
+            assert worker.cancelled is False
+
+            assert app.handle_escape_interrupt(now=14.0) is True
+            assert worker.cancelled is True
+
+    asyncio.run(run())
+
+
 def test_new_command_resets_current_session_state():
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:

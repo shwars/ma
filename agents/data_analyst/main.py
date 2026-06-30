@@ -22,8 +22,8 @@ Local files are available through filesystem tools:
 
 Rules:
 1. Always list and inspect relevant local files before doing analysis.
-2. Upload all needed data files before using Code Interpreter.
-3. Do all computation, plotting, table generation, and file creation in Code Interpreter.
+2. Upload all needed data files before data analysis or Code Interpreter use.
+3. Do all computation, plotting, table generation, and file creation in Code Interpreter using the uploaded files.
 4. Save useful outputs as files: charts, cleaned datasets, summaries, notebooks, or reports.
 5. In your final answer, explicitly list every file you produced and return/link those files so ma can download them.
 6. Explain assumptions, data quality issues, and limitations clearly.

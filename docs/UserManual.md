@@ -79,6 +79,7 @@ When you type a slash command, `ma` shows possible completions in muted text abo
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
 The top status line shows the active agent/model, current reasoning level, and current run status: Ready, Working, Needs input, or Executing code.
 Modal windows such as Help, selection pickers, clarification prompts, and download confirmation appear centered over the app.
+During an active run, press Esc once to show an interrupt warning. Press Esc again within 2 seconds to cancel the current run. The transcript, notes, TODOs, downloaded-file tracking, and partial assistant/reasoning output are preserved.
 
 ## Built-In Agents
 
@@ -102,7 +103,9 @@ Pro Analyst adds:
 - `edit_file(filename, unified_diff)`: apply a unified diff to a local UTF-8 text file.
 - `execute_command(command, args=None, timeout_seconds=60)`: run only `cmd`, `bash`, or `ssh`.
 
-Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so changing `/model` or `/reasoning` does not create a new container. Uploads and Code Interpreter calls are kept on that same container. Its prompt includes a current skill metadata snapshot, and the agent is instructed to call `list_skills()` and `load_skill(...)` before specialized work. Pro Analyst also uses TODO tools for visible multi-step planning.
+Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so changing `/model` or `/reasoning` does not create a new container. Uploads and Code Interpreter calls are kept on that same container. Its prompt includes a current skill metadata snapshot, and the agent is instructed to review that snapshot before exploring data, then call `load_skill(...)` only when applying a relevant skill. It should not reload skill metadata during normal execution. Pro Analyst also uses TODO tools for visible multi-step planning.
+
+When Pro Analyst uploads files, the upload result includes `container_path`. Code Interpreter Python must use that exact path instead of assuming the local filename is visible in the container. Needed local data files should always be uploaded before Code Interpreter data analysis starts.
 
 Bundled Pro Analyst skills include PPTX presentation, DOCX document, guided data exploration, and markdown-to-PDF workflows. PPTX/DOCX files are generated inside Code Interpreter and returned for download; `ma` does not install Office-generation libraries locally.
 

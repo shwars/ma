@@ -14,6 +14,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - A top status line showing Ready, Working, Needs input, Executing code, and the active reasoning level
 - Command palette entries matching the main slash commands
 - Tab completion and muted live hints for slash commands
+- Double-Escape interrupt for cancelling an active agent run
 - Startup splash screen while agents and models initialize
 - Session-scoped notes and TODO tools for agents
 - Host logging and user-clarification integration tools for agents
@@ -89,6 +90,8 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 
 While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer, including available agent names, model names, and theme names.
 
+During an active run, press Esc once to show an interrupt warning. Press Esc again within 2 seconds to cancel the current agent run. Partial assistant/reasoning output stays in the transcript.
+
 ## Built-In Agents
 
 - `simple`: a concise assistant with web search.
@@ -99,7 +102,9 @@ While typing a slash command, press Tab to complete the current prefix. `ma` als
 For Code Interpreter runs, generated code appears as a collapsed expandable block. Code output/logs are shown in dark green. Files returned by Code Interpreter follow the active `/download` mode.
 If a returned file already exists with the same name, size, and checksum, `ma` treats it as already downloaded instead of writing a suffixed duplicate.
 
-Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so `/model` and `/reasoning` changes keep uploads and Code Interpreter calls on the same container. Its prompt includes a current skill metadata snapshot, and it is instructed to call `list_skills()` and `load_skill(...)` before specialized work. Skills live in `skills/<skill_id>/skill.md` under either the current working directory or `agents/pro_analyst/`. Current-directory skills override bundled skills. PPTX/DOCX skills generate files inside Code Interpreter, not through local `ma` dependencies.
+Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so `/model` and `/reasoning` changes keep uploads and Code Interpreter calls on the same container. Its prompt includes a current skill metadata snapshot, and it is instructed to review that snapshot before exploring data, then call `load_skill(...)` only when applying a relevant skill. Skills live in `skills/<skill_id>/skill.md` under either the current working directory or `agents/pro_analyst/`. Current-directory skills override bundled skills at context-build time. PPTX/DOCX skills generate files inside Code Interpreter, not through local `ma` dependencies.
+
+For Pro Analyst, the `upload` tool returns the exact `container_path` for each uploaded file. Code Interpreter Python should use that value instead of guessing from the local filename. Local data files should always be uploaded before Code Interpreter data analysis begins.
 
 Minimal skill format:
 

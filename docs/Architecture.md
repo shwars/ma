@@ -106,9 +106,11 @@ The tools are rooted at `Path.cwd()`, reject absolute paths and `..`, and inspec
 - `edit_file(filename, unified_diff)`
 - `execute_command(command, args=None, timeout_seconds=60)`
 
-Skills are folders containing `skill.md` frontmatter and instructions. Pro Analyst searches both `Path.cwd()` and `agents/pro_analyst`; current-directory skills override bundled skills with the same ID. `set_context` injects a current skill metadata snapshot into the agent instructions, while the agent is still instructed to call `list_skills()` dynamically before specialized work.
+Skills are folders containing `skill.md` frontmatter and instructions. Pro Analyst searches both `Path.cwd()` and `agents/pro_analyst`; current-directory skills override bundled skills with the same ID. `set_context` injects a current skill metadata snapshot into the agent instructions before each run/context update. The agent is instructed to review that snapshot before data exploration and not to reload skill metadata during normal execution. `list_skills()` remains available for explicit user requests to inspect available skills.
 
-Pro Analyst keeps a module-level Code Interpreter container ID and creates the container lazily. Model or reasoning changes rebuild the tool list but reuse the same container ID for both `upload` and `CodeInterpreterTool`. A `/reload` re-imports the module and may create a new container. Bundled PPTX/DOCX skills instruct the agent to build those files in Code Interpreter and return them for download, so local `ma` dependencies stay minimal.
+Pro Analyst keeps a module-level Code Interpreter container ID and creates the container lazily. Model or reasoning changes rebuild the tool list but reuse the same container ID for both `upload` and `CodeInterpreterTool`. If the host sync client changes, Pro Analyst creates a new matching container instead of reusing a stale ID. A `/reload` re-imports the module and may create a new container. Bundled PPTX/DOCX skills instruct the agent to build those files in Code Interpreter and return them for download, so local `ma` dependencies stay minimal.
+
+Pro Analyst's `upload` tool returns the local name, file ID, container ID, byte count, and exact `container_path` reported by the API. The agent instructions require needed local data files to be uploaded before Code Interpreter data analysis, require Code Interpreter Python to use `container_path` directly, and tell the agent to list the Code Interpreter working directory before retrying if a file is not found.
 
 ## UI Lifecycle
 
@@ -121,6 +123,8 @@ Modal screens are explicitly centered in Textual CSS so selectors, help, clarifi
 The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types. Completion candidates are dynamic: built-in commands plus loaded agent names/display names, configured model IDs/display names, and Textual theme names.
 
 `/new` starts a fresh chat session by clearing conversation history, session notes/TODOs, transcript widgets, and downloaded Code Interpreter file tracking. It keeps the selected agent, model, and reasoning settings.
+
+Active chat runs are tracked as Textual workers. During a run, pressing Esc once writes a dim warning to the transcript; pressing Esc again within 2 seconds calls `Worker.cancel()` on the active chat worker. Cancellation finalizes any partial assistant/reasoning blocks, records `Run interrupted.`, returns the status to Ready, and does not add a synthetic assistant response to conversation history.
 
 ## Tools
 
@@ -165,6 +169,8 @@ It displays:
 Assistant text and reasoning text are streamed as plain text inside their active output blocks. When a block ends, either before a tool/agent event or at run completion, `ma` finalizes the whole block as Markdown so tables, code fences, lists, and other multi-token Markdown constructs render consistently. If reasoning has already streamed, a matching completed reasoning run item is skipped to avoid duplicate transcript entries.
 
 After a run, the app stores `result.to_input_list()` when available so future turns preserve SDK conversation history.
+
+If the chat worker is cancelled, history is left unchanged from before the interrupted user turn. Provider-side cancellation depends on the SDK/client honoring coroutine cancellation, but the UI stops awaiting the stream and becomes usable again.
 
 ## Code Interpreter Files
 

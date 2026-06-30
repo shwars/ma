@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import hashlib
+import time
 from os.path import commonprefix
 from datetime import datetime
 from pathlib import Path
@@ -386,6 +387,10 @@ class DownloadFilesScreen(ModalScreen[bool]):
 
 class ComposerTextArea(TextArea):
     async def _on_key(self, event) -> None:
+        if event.key == "escape" and self.app.handle_escape_interrupt():
+            event.stop()
+            event.prevent_default()
+            return
         if event.key == "tab":
             event.stop()
             event.prevent_default()
@@ -770,6 +775,9 @@ class MaApp(App[None]):
         self.download_mode = "ask"
         self.downloaded_file_ids: set[str] = set()
         self.agent_status = "Ready"
+        self.active_run_worker: Any = None
+        self.last_escape_at = 0.0
+        self.interrupt_requested = False
 
     def _initial_model_choice(self) -> ModelChoice | None:
         return next(
@@ -896,7 +904,26 @@ class MaApp(App[None]):
         if text.startswith("/"):
             await self.handle_command(text)
             return
-        self.run_chat(text)
+        self.active_run_worker = self.run_chat(text)
+
+    def key_escape(self) -> None:
+        self.handle_escape_interrupt()
+
+    def handle_escape_interrupt(self, now: float | None = None) -> bool:
+        if not self.busy or self.active_run_worker is None:
+            return False
+
+        current_time = time.monotonic() if now is None else now
+        if current_time - self.last_escape_at <= 2.0:
+            self.interrupt_requested = True
+            self.last_escape_at = 0.0
+            self.add_event("Interrupt requested.")
+            self.active_run_worker.cancel()
+            return True
+
+        self.last_escape_at = current_time
+        self.add_event("Press Esc again to interrupt the current run.")
+        return True
 
     async def handle_command(self, text: str) -> None:
         stripped = text.strip()
@@ -1174,13 +1201,16 @@ class MaApp(App[None]):
     async def run_chat(self, text: str) -> None:
         if self.busy:
             self.add_event("A run is already active.")
+            self.active_run_worker = None
             return
         if not self.active_agent:
             self.add_event("No active agent.")
+            self.active_run_worker = None
             return
         use_agent_default = bool(self.selected_model and self.selected_model.is_agent_default)
         if not use_agent_default and self.selected_model_object is None:
             self.add_event("No model is ready. Configure folder_id/api_key and at least one model.")
+            self.active_run_worker = None
             return
 
         self.busy = True
@@ -1190,14 +1220,15 @@ class MaApp(App[None]):
         await transcript.mount(user_widget)
         transcript.scroll_end(animate=False)
 
+        current_assistant_block: AssistantBlock | None = None
+        current_reasoning_block: ReasoningBlock | None = None
+
         try:
             if not use_agent_default:
                 setattr(self.active_agent.agent, "model", self.selected_model_object)
             self.apply_reasoning_settings()
             run_input = self.history + [{"role": "user", "content": text}]
             assistant_text_parts: list[str] = []
-            current_assistant_block: AssistantBlock | None = None
-            current_reasoning_block: ReasoningBlock | None = None
             streamed_reasoning_parts: list[str] = []
 
             from agents import Runner
@@ -1269,10 +1300,20 @@ class MaApp(App[None]):
                 self.history = run_input + [{"role": "assistant", "content": "".join(assistant_text_parts)}]
             await self.handle_code_interpreter_files(getattr(result, "new_items", []))
             self.refresh_side()
+        except asyncio.CancelledError:
+            if current_assistant_block is not None:
+                current_assistant_block.finalize()
+            if current_reasoning_block is not None:
+                current_reasoning_block.finalize()
+            self.add_event("Run interrupted.")
+            raise
         except Exception as exc:
             self.add_event(f"Run failed: {exc}")
         finally:
             self.busy = False
+            self.active_run_worker = None
+            self.last_escape_at = 0.0
+            self.interrupt_requested = False
             self.set_agent_status("Ready")
 
     def apply_reasoning_settings(self) -> None:

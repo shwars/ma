@@ -92,8 +92,25 @@ def upload_files(filenames: list[str]) -> str:
             raise FileNotFoundError(filename)
         with path.open("rb") as handle:
             result = _client.containers.files.create(container_id=_container_id, file=handle)
-        uploaded.append({"name": path.relative_to(_root).as_posix(), "id": result.id})
-    return json.dumps({"files": uploaded}, ensure_ascii=False)
+        uploaded.append(
+            {
+                "name": path.relative_to(_root).as_posix(),
+                "id": result.id,
+                "container_id": getattr(result, "container_id", _container_id),
+                "container_path": getattr(result, "path", path.name),
+                "bytes": getattr(result, "bytes", path.stat().st_size),
+            }
+        )
+    return json.dumps(
+        {
+            "files": uploaded,
+            "code_interpreter_note": (
+                "Use each file's container_path exactly in Code Interpreter Python code. "
+                "Do not assume the local filename is the container path."
+            ),
+        },
+        ensure_ascii=False,
+    )
 
 
 def read_local_file(filename: str, max_bytes: int = 200000) -> str:
@@ -215,7 +232,7 @@ def inspect(filename: str) -> str:
 
 @function_tool
 def upload(filenames: list[str]) -> str:
-    """Upload local files into the active Code Interpreter container."""
+    """Upload local files into Code Interpreter and return exact container_path values to use in code."""
     return upload_files(filenames)
 
 
