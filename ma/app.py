@@ -38,6 +38,7 @@ REASONING_CHOICES: list[tuple[str, str]] = [
 COMMAND_COMPLETIONS = [
     "/agent",
     "/download",
+    "/download all",
     "/download auto",
     "/download ask",
     "/download skip",
@@ -143,6 +144,22 @@ def collect_output_files(value: Any) -> list[dict[str, str]]:
 
     visit(value)
     return found
+
+
+def result_file_sources(result: Any, input_items: Any = None) -> list[Any]:
+    sources: list[Any] = [
+        getattr(result, "new_items", []),
+        getattr(result, "raw_responses", []),
+        getattr(result, "final_output", None),
+    ]
+    if input_items is not None:
+        sources.append(input_items)
+    elif hasattr(result, "to_input_list"):
+        try:
+            sources.append(result.to_input_list())
+        except Exception:
+            pass
+    return sources
 
 
 def is_code_interpreter_raw(raw: Any) -> bool:
@@ -276,6 +293,7 @@ class HelpScreen(ModalScreen[None]):
                 "/reasoning [level]  Set reasoning level for the current model.",
                 "/theme [name]       Select the Textual UI theme.",
                 "/download [mode]    Set Code Interpreter file downloads: auto, ask, skip.",
+                "/download all       Download all files from the active agent container.",
                 "/new                Start a new chat session and clear session state.",
                 "/reload             Reload agents from disk.",
                 "/notes save         Save current notes to a markdown file.",
@@ -516,16 +534,21 @@ def render_command_hint(text: str, commands: list[str] | None = None) -> Text:
 
 def startup_splash() -> Text:
     art = r"""
-              _   _              ___
-             μ μ μ μ            / _ \
-            μ   μ   μ          / /_\ \
-           μ    μ    μ        /  _  \
-          μ     μ     μ      /_/   \_\
+              μ               /\
+              μ              /  \
+          μ   μ             /    \
+          μ   μ            /      \
+          μ   μ           /   --   \
+          μ   μ          /          \
+          μμμμ          /            \
+          μ            /              \
+          μ
+          μ
 
-                 μA
+              μA
 
-        (C) 2026 Dmitry Soshnikov
-        (C) 2026 SHWARSICO Vibe Coding Dept
+            (C) 2026  Dmitry Soshnikov        .  .  .
+            (C) 2026  SHWARSICO Vibe Coding Dept  .  .  .
     """
     return Text(art.strip("\n"), style="bold cyan")
 
@@ -938,6 +961,8 @@ class MaApp(App[None]):
             self.switch_model_by_query(stripped.split(maxsplit=1)[1])
         elif command == "/download":
             await self.choose_download_mode()
+        elif command == "/download all":
+            await self.download_all_container_files()
         elif command.startswith("/download "):
             self.switch_download_mode(command.split(maxsplit=1)[1])
         elif command == "/theme":
@@ -1294,11 +1319,13 @@ class MaApp(App[None]):
             if current_reasoning_block is not None:
                 current_reasoning_block.finalize()
 
+            input_items = None
             if hasattr(result, "to_input_list"):
-                self.history = result.to_input_list()
+                input_items = result.to_input_list()
+                self.history = input_items
             else:
                 self.history = run_input + [{"role": "assistant", "content": "".join(assistant_text_parts)}]
-            await self.handle_code_interpreter_files(getattr(result, "new_items", []))
+            await self.handle_code_interpreter_files(result_file_sources(result, input_items))
             self.refresh_side()
         except asyncio.CancelledError:
             if current_assistant_block is not None:
@@ -1387,7 +1414,14 @@ class MaApp(App[None]):
         files: list[dict[str, str]] = []
         for item in items:
             files.extend(collect_output_files(item))
-        new_files = [file for file in files if file["file_id"] not in self.downloaded_file_ids]
+        seen_file_ids: set[str] = set()
+        new_files: list[dict[str, str]] = []
+        for file in files:
+            file_id = file["file_id"]
+            if file_id in self.downloaded_file_ids or file_id in seen_file_ids:
+                continue
+            seen_file_ids.add(file_id)
+            new_files.append(file)
         if not new_files:
             return
 
@@ -1410,6 +1444,38 @@ class MaApp(App[None]):
                 self.add_event(f"Downloaded {file['filename']} to {download.path}.")
             else:
                 self.add_event(f"Skipped {file['filename']}: identical file already exists at {download.path}.")
+
+    async def download_all_container_files(self) -> None:
+        if self.client is None:
+            self.add_event("No OpenAI client is configured.")
+            return
+        container_id = self.active_agent.container_id if self.active_agent else None
+        if not container_id:
+            self.add_event("Active agent does not expose a Code Interpreter container.")
+            return
+
+        files = list(self.client.containers.files.list(container_id=container_id, limit=100))
+        if not files:
+            self.add_event(f"No files found in container {container_id}.")
+            return
+
+        saved_count = 0
+        skipped_count = 0
+        for file in files:
+            file_id = str(getattr(file, "id"))
+            container_path = str(getattr(file, "path", "") or file_id)
+            filename = Path(container_path).name or file_id
+            content = self.client.containers.files.content.retrieve(file_id, container_id=container_id)
+            download = write_downloaded_file(Path.cwd(), filename, content.read())
+            self.downloaded_file_ids.add(file_id)
+            if download.saved:
+                saved_count += 1
+                self.add_event(f"Downloaded {filename} to {download.path}.")
+            else:
+                skipped_count += 1
+                self.add_event(f"Skipped {filename}: identical file already exists at {download.path}.")
+
+        self.add_event(f"Downloaded {saved_count} container files; skipped {skipped_count}.")
 
     async def ask_download_files(self, files: list[dict[str, str]]) -> bool:
         loop = asyncio.get_running_loop()

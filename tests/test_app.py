@@ -24,6 +24,7 @@ from ma.app import (
     reasoning_item_text,
     render_command_hint,
     render_todo_items,
+    result_file_sources,
     safe_download_path,
     same_file_content,
     should_skip_completed_reasoning,
@@ -540,6 +541,24 @@ def test_collect_output_files_deduplicates_nested_annotations():
     ]
 
 
+def test_result_file_sources_cover_all_final_result_surfaces():
+    input_items = [{"annotations": [{"file_id": "file-input", "filename": "input.csv"}]}]
+    result = SimpleNamespace(
+        new_items=[{"annotations": [{"file_id": "file-new", "filename": "new.csv"}]}],
+        raw_responses=[{"output": [{"annotations": [{"file_id": "file-raw", "filename": "raw.csv"}]}]}],
+        final_output={"annotations": [{"file_id": "file-final", "filename": "final.csv"}]},
+    )
+
+    files = collect_output_files(result_file_sources(result, input_items))
+
+    assert files == [
+        {"file_id": "file-new", "filename": "new.csv"},
+        {"file_id": "file-raw", "filename": "raw.csv"},
+        {"file_id": "file-final", "filename": "final.csv"},
+        {"file_id": "file-input", "filename": "input.csv"},
+    ]
+
+
 def test_download_policy_auto_skip_and_duplicate_tracking(tmp_path):
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:
@@ -566,6 +585,89 @@ def test_download_policy_auto_skip_and_duplicate_tracking(tmp_path):
 
             assert downloaded == [("file-1", "chart.png")]
             assert app.downloaded_file_ids == {"file-1"}
+
+    asyncio.run(run())
+
+
+def test_download_all_requires_active_container():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            app.client = object()
+            app.active_agent = LoadedAgent(
+                name="plain",
+                module=ModuleType("plain"),
+                agent=object(),
+                props={"display_name": "Plain"},
+            )
+
+            await app.handle_command("/download all")
+            await pilot.pause()
+
+            transcript = app.query_one("#transcript")
+            assert any(
+                "does not expose a Code Interpreter container" in str(child.content)
+                for child in transcript.children
+            )
+
+    asyncio.run(run())
+
+
+def test_download_all_downloads_container_files_and_skips_identical(tmp_path):
+    async def run() -> None:
+        class BinaryContent:
+            def __init__(self, data: bytes) -> None:
+                self.data = data
+
+            def read(self) -> bytes:
+                return self.data
+
+        class ContentResource:
+            @staticmethod
+            def retrieve(file_id, container_id):
+                assert container_id == "container-1"
+                return BinaryContent({"file-1": b"same", "file-2": b"new"}[file_id])
+
+        class FilesResource:
+            content = ContentResource()
+
+            @staticmethod
+            def list(container_id, limit):
+                assert container_id == "container-1"
+                assert limit == 100
+                return [
+                    SimpleNamespace(id="file-1", path="/mnt/data/chart.png"),
+                    SimpleNamespace(id="file-2", path="/mnt/data/report.txt"),
+                ]
+
+        class ContainersResource:
+            files = FilesResource()
+
+        cwd = Path.cwd()
+        try:
+            import os
+
+            os.chdir(tmp_path)
+            (tmp_path / "chart.png").write_bytes(b"same")
+
+            async with MaApp(config_path="missing.json").run_test() as pilot:
+                app = pilot.app
+                app.client = SimpleNamespace(containers=ContainersResource())
+                app.active_agent = LoadedAgent(
+                    name="container",
+                    module=ModuleType("container"),
+                    agent=object(),
+                    props={"display_name": "Container", "container_id": "container-1"},
+                )
+
+                await app.handle_command("/download all")
+                await pilot.pause()
+
+                assert (tmp_path / "chart.png").read_bytes() == b"same"
+                assert (tmp_path / "report.txt").read_bytes() == b"new"
+                assert app.downloaded_file_ids == {"file-1", "file-2"}
+        finally:
+            os.chdir(cwd)
 
     asyncio.run(run())
 

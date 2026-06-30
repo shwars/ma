@@ -182,6 +182,7 @@ def test_pro_analyst_reuses_container_and_keeps_upload_consistent(tmp_path):
 
     assert created == ["ma-pro-analysis"]
     assert main.get_container_id() == "container-1"
+    assert main.get_props()["container_id"] == "container-1"
     assert uploads == [("container-1", "data.csv")]
     assert result["files"] == [
         {

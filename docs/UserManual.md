@@ -67,6 +67,7 @@ uv run ma
 - `/download auto` downloads Code Interpreter generated files automatically.
 - `/download ask` asks before downloading Code Interpreter generated files. This is the default.
 - `/download skip` leaves generated files in the remote container and only displays their names.
+- `/download all` downloads every file from the active agent's exposed Code Interpreter container.
 - `/new` starts a new chat session, clearing conversation history, session notes/TODOs, transcript, and downloaded-file tracking.
 - `/help` opens the command help window.
 - `/reload` reloads agents from disk.
@@ -122,7 +123,7 @@ tags: [reporting, data]
 Skill instructions for the agent.
 ```
 
-Generated Code Interpreter code is shown as a collapsed expandable block. Code output/logs are shown in dark green. The agent is instructed to return every file it creates so `ma` can download or report it according to `/download`.
+Generated Code Interpreter code is shown as a collapsed expandable block. Code output/logs are shown in dark green. The agent is instructed to return every file it creates so `ma` can download or report it according to `/download`. When the active agent exposes `container_id` in its props, `/download all` lists that container and downloads every file it currently contains.
 When a returned file already exists in the working directory with the same name, size, and checksum, `ma` skips saving a duplicate. If the name exists but the content differs, it writes a suffixed file such as `chart-1.png`.
 
 When a model streams reasoning, `ma` shows it live in gray and then reformats the completed reasoning block as Markdown.

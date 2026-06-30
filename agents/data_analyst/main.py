@@ -60,8 +60,11 @@ def set_context(context: Any) -> None:
 
 
 def get_props() -> dict:
-    return {
+    props = {
         "display_name": "Data Analyst",
         "uses_notes": False,
         "uses_todo": False,
     }
+    if _container_id:
+        props["container_id"] = _container_id
+    return props

@@ -28,10 +28,23 @@ class LoadedAgent:
     def uses_todo(self) -> bool:
         return bool(self.props.get("uses_todo", False))
 
+    @property
+    def container_id(self) -> str | None:
+        value = self.props.get("container_id")
+        return str(value) if value else None
+
     def set_context(self, context: Any) -> None:
         setter = getattr(self.module, "set_context", None)
         if callable(setter):
             setter(context)
+        self.refresh_props()
+
+    def refresh_props(self) -> None:
+        props_getter = getattr(self.module, "get_props", None)
+        self.props = props_getter() if callable(props_getter) else {}
+        self.props.setdefault("display_name", self.name.replace("_", " ").title())
+        self.props.setdefault("uses_notes", False)
+        self.props.setdefault("uses_todo", False)
 
 
 class AgentLoader:
@@ -74,13 +87,9 @@ class AgentLoader:
         if agent is None:
             raise AttributeError(f"{main_py} must export a global 'agent' object")
 
-        props_getter = getattr(module, "get_props", None)
-        props = props_getter() if callable(props_getter) else {}
-        props.setdefault("display_name", name.replace("_", " ").title())
-        props.setdefault("uses_notes", False)
-        props.setdefault("uses_todo", False)
-
-        return LoadedAgent(name=name, module=module, agent=agent, props=props)
+        loaded = LoadedAgent(name=name, module=module, agent=agent, props={})
+        loaded.refresh_props()
+        return loaded
 
     def reload(self, name: str) -> LoadedAgent:
         return self.load(name)

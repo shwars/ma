@@ -48,3 +48,4 @@
 - Added double-Escape interruption for active chat runs by tracking the Textual worker, cancelling it on the second Escape within 2 seconds, preserving partial transcript output, and avoiding fake assistant history after cancellation.
 - Fixed Pro Analyst upload guidance by returning the API-reported Code Interpreter `container_path`, instructing the agent to use it exactly, and recreating the container if the host client changes.
 - Changed Pro Analyst skill handling to use the context-built metadata snapshot before data exploration instead of refreshing skill metadata during normal execution, and strengthened upload-before-analysis instructions.
+- Added dynamic `container_id` props, broader final attached-file scanning, and `/download all` for downloading every file from the active agent's Code Interpreter container.

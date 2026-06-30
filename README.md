@@ -81,6 +81,7 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 - `/reasoning` selects the reasoning effort for the current model.
 - `/theme [name]` selects a Textual UI theme, or opens the centered selector when no theme is given.
 - `/download auto`, `/download ask`, `/download skip` controls Code Interpreter generated-file downloads. Default is `ask`.
+- `/download all` downloads every file from the active agent's exposed Code Interpreter container.
 - `/new` starts a new chat session and clears session state.
 - `/help` opens the command help window.
 - `/reload` reloads agents from disk.
@@ -99,7 +100,7 @@ During an active run, press Esc once to show an interrupt warning. Press Esc aga
 - `data_analyst`: a local-data analyst that can list/inspect local CSV/XLS/XLSX files, upload selected files to Code Interpreter, run analysis, and return generated files.
 - `pro_analyst`: an advanced data analyst with Data Analyst capabilities plus skill loading, TODO planning, safe local file read/write/edit tools, and allowlisted command execution.
 
-For Code Interpreter runs, generated code appears as a collapsed expandable block. Code output/logs are shown in dark green. Files returned by Code Interpreter follow the active `/download` mode.
+For Code Interpreter runs, generated code appears as a collapsed expandable block. Code output/logs are shown in dark green. Files returned by Code Interpreter follow the active `/download` mode. `/download all` is available when the active agent exposes a `container_id` prop.
 If a returned file already exists with the same name, size, and checksum, `ma` treats it as already downloaded instead of writing a suffixed duplicate.
 
 Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so `/model` and `/reasoning` changes keep uploads and Code Interpreter calls on the same container. Its prompt includes a current skill metadata snapshot, and it is instructed to review that snapshot before exploring data, then call `load_skill(...)` only when applying a relevant skill. Skills live in `skills/<skill_id>/skill.md` under either the current working directory or `agents/pro_analyst/`. Current-directory skills override bundled skills at context-build time. PPTX/DOCX skills generate files inside Code Interpreter, not through local `ma` dependencies.

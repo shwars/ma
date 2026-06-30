@@ -18,7 +18,7 @@ def set_context(context):
     agent.context = context
 
 def get_props():
-    return {"display_name": "Sample Agent", "uses_notes": True}
+    return {"display_name": "Sample Agent", "uses_notes": True, "container_id": getattr(agent, "container_id", None)}
 """.strip(),
         encoding="utf-8",
     )
@@ -27,11 +27,14 @@ def get_props():
     assert loader.discover() == ["sample"]
 
     loaded = loader.load("sample")
+    assert loaded.container_id is None
+    loaded.agent.container_id = "container-1"
     loaded.set_context({"ok": True})
 
     assert loaded.display_name == "Sample Agent"
     assert loaded.uses_notes is True
     assert loaded.uses_todo is False
+    assert loaded.container_id == "container-1"
     assert loaded.agent.context == {"ok": True}
 
 

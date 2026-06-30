@@ -42,6 +42,8 @@ def get_props() -> dict: ...
 }
 ```
 
+Agents may also return `"container_id": "<code-interpreter-container-id>"` when they own a Code Interpreter container. `LoadedAgent.set_context()` refreshes props after calling `set_context(context)`, so runtime values created during context application are visible to the UI.
+
 The loader imports agent files by path under an internal module name. This avoids colliding with the OpenAI Agents SDK package, which is also named `agents`.
 
 ## Context Object
@@ -174,13 +176,16 @@ If the chat worker is cancelled, history is left unchanged from before the inter
 
 ## Code Interpreter Files
 
-`ma` scans streaming run items and final `result.new_items` for file annotations containing `file_id` and `filename`.
+`ma` scans streaming run items and final result surfaces for file annotations containing `file_id` and `filename`. At run completion it checks `new_items`, `raw_responses`, `final_output`, and `to_input_list()` when available.
 
 The download policy is controlled by:
 
 - `/download auto`: download new files immediately.
 - `/download ask`: ask before downloading. This is the default.
 - `/download skip`: show file names but do not download.
+- `/download all`: download every file listed in the active agent's exposed Code Interpreter container.
 
 Downloaded files are written to `Path.cwd()`. Existing filenames are preserved by suffixing new paths, such as `chart-1.png`. Downloaded file IDs are tracked per session to avoid duplicate downloads.
 Before suffixing, `ma` checks whether the direct target filename already has the same size and SHA-256 checksum as the downloaded bytes. Identical files are treated as already present and are not written again.
+
+`/download all` requires the active agent to expose `container_id` through props. It uses `client.containers.files.list(container_id=...)` and `client.containers.files.content.retrieve(file_id, container_id=...)`, saves by the basename of the container path, and records downloaded file IDs so later automatic scans do not duplicate them.
