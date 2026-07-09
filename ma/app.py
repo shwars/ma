@@ -236,6 +236,12 @@ def should_skip_completed_reasoning(item: Any, streamed_reasoning_text: str) -> 
     return not completed or completed in streamed or streamed in completed
 
 
+def truncate_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
 class PickerScreen(ModalScreen[str | None]):
     def __init__(self, title: str, choices: list[tuple[str, str]]) -> None:
         super().__init__()
@@ -534,21 +540,30 @@ def render_command_hint(text: str, commands: list[str] | None = None) -> Text:
 
 def startup_splash() -> Text:
     art = r"""
-              μ               /\
-              μ              /  \
-          μ   μ             /    \
-          μ   μ            /      \
-          μ   μ           /   --   \
-          μ   μ          /          \
-          μμμμ          /            \
-          μ            /              \
-          μ
-          μ
+          _____                    _____
+         /\    \                  /\    \
+        /::\____\                /::\    \
+       /::::|   |               /::::\    \
+      /:::::|   |              /::::::\    \
+     /::::::|   |             /:::/\:::\    \
+    /:::/|::|   |            /:::/__\:::\    \
+   /:::/ |::|   |           /::::\   \:::\    \
+  /:::/  |::|___|______    /::::::\   \:::\    \
+ /:::/   |::::::::\    \  /:::/\:::\   \:::\    \
+/:::/    |:::::::::\____\/:::/  \:::\   \:::\____\
+\::/    / ~~~~~/:::/    /\::/    \:::\  /:::/    /
+ \/____/      /:::/    /  \/____/ \:::\/:::/    /
+             /:::/    /            \::::::/    /
+            /:::/    /              \::::/    /
+           /:::/    /               /:::/    /
+          /:::/    /               /:::/    /
+         /:::/    /               /:::/    /
+        /:::/    /               /:::/    /
+        \::/    /                \::/    /
+         \/____/                  \/____/
 
-              μA
-
-            (C) 2026  Dmitry Soshnikov        .  .  .
-            (C) 2026  SHWARSICO Vibe Coding Dept  .  .  .
+            (C) 2026 Dmitry Soshnikov
+            (C) 2026 SHWARSICO Vibe Coding Dept
     """
     return Text(art.strip("\n"), style="bold cyan")
 
@@ -775,7 +790,7 @@ class MaApp(App[None]):
         ("ctrl+r", "reload_agents", "Reload"),
     ]
 
-    def __init__(self, config_path: Path | None = None, agents_dir: Path | str = "agents") -> None:
+    def __init__(self, config_path: Path | None = None, agents_dir: Path | str | Iterable[Path | str] = "agents") -> None:
         super().__init__()
         self.config: AppConfig = load_config(config_path)
         self.loader = AgentLoader(agents_dir)
@@ -1372,7 +1387,7 @@ class MaApp(App[None]):
             return f"Tool call: {name or query or getattr(raw, 'type', 'unknown')}"
         if item_type == "tool_call_output_item":
             output = str(getattr(item, "output", ""))
-            return f"Tool output: {output[:160]}"
+            return f"Tool output: {truncate_text(output, 2000)}"
         if item_type == "message_output_item":
             return None
         return f"Event: {item_type or item}"
@@ -1504,7 +1519,7 @@ class MaApp(App[None]):
         if not text:
             return
         transcript = self.query_one("#transcript", VerticalScroll)
-        transcript.mount(Static(f"[dim]{text}[/dim]", classes="event"))
+        transcript.mount(Static(Text(str(text), style="dim"), classes="event"))
         transcript.scroll_end(animate=False)
 
     def log_agent_message(self, message: str) -> None:

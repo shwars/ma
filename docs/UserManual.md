@@ -53,6 +53,14 @@ Start the app:
 uv run ma
 ```
 
+To start `ma` from any working directory on Windows, put this `ma.bat` file somewhere on `PATH`:
+
+```bat
+@uv --project <path_to_ma_dir> run ma %*
+```
+
+Without `--agents-dir`, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also loads agents from `./agents` in the current working directory when that folder exists. Current-directory agents override bundled agents with the same folder name. Use `--agents-dir path1 path2` to replace the default lookup with explicit directories; later directories win for duplicate agent names.
+
 ## Commands
 
 - `/agent` opens the agent selector.
@@ -169,6 +177,8 @@ def get_props():
 ```
 
 Run `/reload` after editing or adding an agent.
+
+That `agents/` folder can be either the bundled one in the `ma` project or a project-local `agents/` folder in the directory where you started `ma`. For explicit control, start with `uv run ma --agents-dir my_agents other_agents`.
 
 The notes tool accepts `extra` as optional text metadata. Use JSON text there if you want to preserve several custom fields in one note.
 

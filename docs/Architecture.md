@@ -10,7 +10,7 @@
 - `ma.runtime` creates the Yandex-backed Agents SDK model:
   - `AsyncOpenAI(base_url="https://ai.api.cloud.yandex.net/v1", api_key=..., project=folder_id)`
   - `OpenAIResponsesModel(model=model_uri, openai_client=...)`
-- `ma.agent_loader` discovers and imports user agents from `agents/<name>/main.py`.
+- `ma.agent_loader` discovers and imports user agents from one or more `agents/<name>/main.py` directories.
 - `ma.stores` and `ma.tools` provide session-scoped notes and TODO tools.
 - `agents/data_analyst/filesystem_tools.py` provides reusable local file tools for Data Analyst-style agents.
 - `agents/pro_analyst/skill_tools.py` and `filesystem_tools.py` provide markdown skill loading plus advanced local file/command tools.
@@ -45,6 +45,8 @@ def get_props() -> dict: ...
 Agents may also return `"container_id": "<code-interpreter-container-id>"` when they own a Code Interpreter container. `LoadedAgent.set_context()` refreshes props after calling `set_context(context)`, so runtime values created during context application are visible to the UI.
 
 The loader imports agent files by path under an internal module name. This avoids colliding with the OpenAI Agents SDK package, which is also named `agents`.
+
+Agent lookup is multi-directory. By default, the CLI configures the loader with the bundled project `agents/` directory first and `Path.cwd() / "agents"` second when that folder exists and is distinct. If the same agent folder name appears in multiple directories, the later directory wins, so project-local agents override bundled examples. Passing `--agents-dir path1 path2` replaces the default lookup with those explicit directories.
 
 ## Context Object
 

@@ -53,6 +53,27 @@ def test_agent_loader_reload_reads_changed_file(tmp_path):
     assert loader.reload("sample").display_name == "Two"
 
 
+def test_agent_loader_discovers_multiple_directories_and_later_wins(tmp_path):
+    bundled = tmp_path / "bundled"
+    local = tmp_path / "local"
+    for root, display in [(bundled, "Bundled"), (local, "Local")]:
+        agent_dir = root / "sample"
+        agent_dir.mkdir(parents=True)
+        (agent_dir / "main.py").write_text(
+            f"agent = object()\ndef get_props():\n    return {{'display_name': '{display}'}}\n",
+            encoding="utf-8",
+        )
+    other_dir = bundled / "other"
+    other_dir.mkdir()
+    (other_dir / "main.py").write_text("agent = object()\n", encoding="utf-8")
+
+    loader = AgentLoader([bundled, tmp_path / "missing", local])
+
+    assert loader.discover() == ["other", "sample"]
+    assert loader.load("sample").display_name == "Local"
+    assert loader.load("other").display_name == "Other"
+
+
 def test_builtin_data_analyst_agent_is_discoverable_and_loadable():
     loader = AgentLoader("agents")
 

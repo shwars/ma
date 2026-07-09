@@ -28,6 +28,7 @@ from ma.app import (
     safe_download_path,
     same_file_content,
     should_skip_completed_reasoning,
+    truncate_text,
     write_downloaded_file,
 )
 from ma.stores import TodoItem
@@ -367,7 +368,8 @@ def test_startup_splash_is_mounted_before_background_startup_finishes():
             composer = pilot.app.query_one(ComposerTextArea)
             assert "Dmitry Soshnikov" in splash.content.plain
             assert "SHWARSICO Vibe Coding Dept" in splash.content.plain
-            assert "μA" in splash.content.plain
+            assert "/::\\____\\" in splash.content.plain
+            assert "\\/____/" in splash.content.plain
             assert not composer.has_class("ready")
             assert pilot.app.focused is not composer
 
@@ -704,6 +706,35 @@ def test_message_output_items_are_not_rendered_as_events():
     app = MaApp(config_path="missing.json")
 
     assert app.describe_run_item(SimpleNamespace(type="message_output_item")) is None
+
+
+def test_tool_output_event_preserves_upload_container_path_without_markup():
+    async def run() -> None:
+        output = (
+            '{"files": [{"name": "job_market_salary_trends.csv", "id": "file-1", '
+            '"container_id": "container-1", "container_path": "/mnt/data/job_market_salary_trends.csv"}]}'
+        )
+
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            description = app.describe_run_item(SimpleNamespace(type="tool_call_output_item", output=output))
+
+            assert description is not None
+            assert "/mnt/data/job_market_salary_trends.csv" in description
+            app.add_event(description)
+            await pilot.pause()
+
+            event = app.query_one(".event", Static)
+            assert isinstance(event.content, Text)
+            assert "[/dim]" not in event.content.plain
+            assert "/mnt/data/job_market_salary_trends.csv" in event.content.plain
+
+    asyncio.run(run())
+
+
+def test_truncate_text_adds_ellipsis_only_when_needed():
+    assert truncate_text("short", 10) == "short"
+    assert truncate_text("abcdefghijklmnopqrstuvwxyz", 10) == "abcdefg..."
 
 
 def test_reasoning_items_render_summary_text():

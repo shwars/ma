@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Iterable
 
 
 @dataclass
@@ -48,23 +48,23 @@ class LoadedAgent:
 
 
 class AgentLoader:
-    def __init__(self, agents_dir: Path | str = "agents") -> None:
-        self.agents_dir = Path(agents_dir)
+    def __init__(self, agents_dir: Path | str | Iterable[Path | str] = "agents") -> None:
+        if isinstance(agents_dir, (str, Path)):
+            dirs = [agents_dir]
+        else:
+            dirs = list(agents_dir)
+        self.agent_dirs = [Path(path) for path in dirs]
 
     def discover(self) -> list[str]:
-        if not self.agents_dir.exists():
-            return []
-        names: list[str] = []
-        for path in sorted(self.agents_dir.iterdir()):
-            if path.is_dir() and (path / "main.py").exists():
-                names.append(path.name)
-        return names
+        agents = self._agent_paths()
+        return sorted(agents)
 
     def load(self, name: str) -> LoadedAgent:
-        agent_dir = self.agents_dir / name
+        agents = self._agent_paths()
+        agent_dir = agents.get(name)
+        if agent_dir is None:
+            raise FileNotFoundError(f"No agent module found for {name}")
         main_py = agent_dir / "main.py"
-        if not main_py.exists():
-            raise FileNotFoundError(f"No agent module found at {main_py}")
 
         importlib.invalidate_caches()
         module_prefix = f"ma_loaded_agents.{name}."
@@ -93,6 +93,16 @@ class AgentLoader:
 
     def reload(self, name: str) -> LoadedAgent:
         return self.load(name)
+
+    def _agent_paths(self) -> dict[str, Path]:
+        agents: dict[str, Path] = {}
+        for agents_dir in self.agent_dirs:
+            if not agents_dir.exists():
+                continue
+            for path in sorted(agents_dir.iterdir()):
+                if path.is_dir() and (path / "main.py").exists():
+                    agents[path.name] = path
+        return agents
 
     def _forget_module(self, module_prefix: str) -> None:
         for key in list(sys.modules):

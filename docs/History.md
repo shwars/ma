@@ -49,3 +49,4 @@
 - Fixed Pro Analyst upload guidance by returning the API-reported Code Interpreter `container_path`, instructing the agent to use it exactly, and recreating the container if the host client changes.
 - Changed Pro Analyst skill handling to use the context-built metadata snapshot before data exploration instead of refreshing skill metadata during normal execution, and strengthened upload-before-analysis instructions.
 - Added dynamic `container_id` props, broader final attached-file scanning, and `/download all` for downloading every file from the active agent's Code Interpreter container.
+- Added multi-directory agent loading: bundled agents plus the current working directory's `agents/` by default, explicit multi-path `--agents-dir`, local override precedence, and a documented Windows `ma.bat` helper for running from arbitrary directories.

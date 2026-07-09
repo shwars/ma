@@ -47,6 +47,14 @@ Run the app:
 uv run ma
 ```
 
+To start `ma` from any working directory on Windows, put a small `ma.bat` somewhere on `PATH`:
+
+```bat
+@uv --project <path_to_ma_dir> run ma %*
+```
+
+When no `--agents-dir` is provided, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also checks `./agents` in the current working directory when it exists. Current-directory agents override bundled agents with the same folder name.
+
 ## Configuration
 
 `config.json` is optional. If it is missing and credentials are available, `ma` asks the Yandex Cloud OpenAI-compatible models API for available models. The model selector shows only Responses-compatible text models using the `gpt://` scheme.
@@ -155,6 +163,8 @@ def get_props():
 ```
 
 Run `/reload` after adding or editing an agent.
+
+Agent discovery is multi-directory. By default, `ma` scans the bundled repo `agents/` directory first and the current working directory's `agents/` directory second, so project-local agents can override bundled examples. Use `--agents-dir path1 path2` to replace that default lookup with explicit directories; when duplicate names exist, the later directory wins.
 
 `context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients. `context.log(message)` writes a light-green message to the transcript. `context.clarification_tools` exposes `ask_user_clarification(question, options, allow_custom_answer=False)`, where each option has `title` and `detail`; it returns the selected `{title, detail}`.
 
