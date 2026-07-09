@@ -55,6 +55,31 @@ To start `ma` from any working directory on Windows, put a small `ma.bat` somewh
 
 When no `--agents-dir` is provided, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also checks `./agents` in the current working directory when it exists. Current-directory agents override bundled agents with the same folder name.
 
+## Run From GitHub
+
+You can run `ma` without cloning the repository. `uv` installs the application from GitHub into an isolated environment while keeping your current directory as the working directory, so its `.env`, `config.json`, and local `./agents/` directory continue to work.
+
+For a one-off session:
+
+```powershell
+uvx --from git+https://github.com/shwars/ma ma
+```
+
+To install `ma` persistently as a command on your `PATH`:
+
+```powershell
+uv tool install git+https://github.com/shwars/ma
+ma
+```
+
+Refresh that installation with:
+
+```powershell
+uv tool upgrade ma
+```
+
+Cloning the repository and using `uv sync` remains the recommended workflow for development or modifying bundled agents.
+
 ## Configuration
 
 `config.json` is optional. If it is missing and credentials are available, `ma` asks the Yandex Cloud OpenAI-compatible models API for available models. The model selector shows only Responses-compatible text models using the `gpt://` scheme.
