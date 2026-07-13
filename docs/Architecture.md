@@ -92,7 +92,7 @@ The first model option is always `Agent Default`. Selecting it means `ma` does n
 
 ## Per-Directory Settings
 
-`ma` stores its active agent folder name, selected model ID, and selected reasoning level in `Path.cwd() / "ma.ini"`. It restores the model and reasoning before initial model construction, then restores the agent after discovery. Missing, malformed, or unavailable settings fall back to normal startup behavior. The central Textual `exit()` path writes the current selections, covering `/exit` and the palette Exit command.
+`ma` stores its active agent folder name, selected model ID, and selected reasoning level in `Path.cwd() / "ma.ini"`. It restores the model and reasoning before initial model construction, then restores the agent after discovery. Its `[history]` section stores the last 10 submitted prompts and slash commands. Missing, malformed, or unavailable settings fall back to normal startup behavior. The central Textual `exit()` path writes the current selections and history, covering `/exit` and the palette Exit command.
 
 ## Built-In Data Analyst
 
@@ -129,7 +129,7 @@ The top status line shows the active agent, active model, reasoning level, downl
 
 Modal screens are explicitly centered in Textual CSS so selectors, help, clarification, note detail, and download confirmation appear over the middle of the app.
 
-The composer owns Enter, Ctrl+Enter, and Tab handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. A muted hint line above the composer shows matching command completions while the user types. Completion candidates are dynamic: built-in commands plus loaded agent names/display names, configured model IDs/display names, and Textual theme names.
+The composer owns Enter, Ctrl+Enter, Tab, Up, and Down handling. Enter submits, Ctrl+Enter inserts a newline, and Tab completes slash commands. Up starts prompt-history navigation when the composer is empty; Up/Down continue browsing a recalled entry until it is edited, after which they return to normal TextArea cursor navigation. A muted hint line above the composer shows matching command completions while the user types. Completion candidates are dynamic: built-in commands plus loaded agent names/display names, configured model IDs/display names, and Textual theme names.
 
 `/new` starts a fresh chat session by clearing conversation history, session notes/TODOs, transcript widgets, and downloaded Code Interpreter file tracking. It keeps the selected agent, model, and reasoning settings.
 

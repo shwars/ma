@@ -54,3 +54,4 @@
 ## 2026-07-13
 
 - Added per-directory `ma.ini` persistence for the active agent, selected model, and reasoning level, so folder-specific agents and model configurations restore independently.
+- Added persistent per-directory composer history: the last 10 submitted prompts and slash commands are recalled with Up/Down and stored in `ma.ini`.

@@ -431,6 +431,14 @@ class ComposerTextArea(TextArea):
             event.prevent_default()
             self.insert("\n")
             return
+        if event.key == "up" and self.app.navigate_prompt_history(-1):
+            event.stop()
+            event.prevent_default()
+            return
+        if event.key == "down" and self.app.navigate_prompt_history(1):
+            event.stop()
+            event.prevent_default()
+            return
         await super()._on_key(event)
 
 
@@ -815,6 +823,9 @@ class MaApp(App[None]):
         self.aclient: Any = None
         self.reasoning_by_model_id: dict[str, str | None] = {}
         self._restore_reasoning_setting()
+        self.prompt_history = list(self.saved_settings.prompt_history)
+        self.prompt_history_index: int | None = None
+        self.recalled_prompt_text: str | None = None
         self.side_refresh_index = 0
         self.history: list[Any] = []
         self.busy = False
@@ -854,6 +865,7 @@ class MaApp(App[None]):
             agent_name=self.active_agent.name if self.active_agent else None,
             model_id=self.selected_model.id if self.selected_model else None,
             reasoning_level=self.selected_reasoning_level or "agent_default",
+            prompt_history=tuple(self.prompt_history),
         )
 
     def save_current_settings(self) -> None:
@@ -971,6 +983,11 @@ class MaApp(App[None]):
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if event.text_area.id == "composer":
+            if (
+                self.prompt_history_index is not None
+                and event.text_area.text != self.recalled_prompt_text
+            ):
+                self.reset_prompt_history_navigation()
             self.update_command_hint()
 
     async def submit_composer(self) -> None:
@@ -979,10 +996,48 @@ class MaApp(App[None]):
         composer.load_text("")
         if not text:
             return
+        self.record_prompt_history(text)
         if text.startswith("/"):
             await self.handle_command(text)
             return
         self.active_run_worker = self.run_chat(text)
+
+    def record_prompt_history(self, text: str) -> None:
+        self.prompt_history.append(text)
+        self.prompt_history = self.prompt_history[-10:]
+        self.reset_prompt_history_navigation()
+
+    def reset_prompt_history_navigation(self) -> None:
+        self.prompt_history_index = None
+        self.recalled_prompt_text = None
+
+    def navigate_prompt_history(self, direction: int) -> bool:
+        if not self.prompt_history:
+            return False
+        composer = self.query_one("#composer", ComposerTextArea)
+        if self.prompt_history_index is None:
+            if composer.text:
+                return False
+            if direction > 0:
+                return False
+            index = len(self.prompt_history) - 1
+        else:
+            index = self.prompt_history_index + direction
+            if index >= len(self.prompt_history):
+                self.reset_prompt_history_navigation()
+                composer.load_text("")
+                self.update_command_hint()
+                return True
+            index = max(0, index)
+
+        self.prompt_history_index = index
+        entry = self.prompt_history[index]
+        self.recalled_prompt_text = entry
+        composer.load_text(entry)
+        last_line = entry.splitlines()[-1] if entry.splitlines() else ""
+        composer.move_cursor((entry.count("\n"), len(last_line)))
+        self.update_command_hint()
+        return True
 
     def key_escape(self) -> None:
         self.handle_escape_interrupt()

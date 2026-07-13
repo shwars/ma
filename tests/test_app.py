@@ -73,6 +73,67 @@ def test_composer_enter_submits_and_ctrl_enter_inserts_newline():
     asyncio.run(run())
 
 
+def test_composer_history_browses_entries_and_returns_to_cursor_navigation(tmp_path):
+    async def run() -> None:
+        async with MaApp(config_path="missing.json", settings_file=tmp_path / "ma.ini").run_test() as pilot:
+            app = pilot.app
+            composer = app.query_one(ComposerTextArea)
+            composer.disabled = False
+            composer.add_class("ready")
+            composer.focus()
+            app.prompt_history = ["/help", "first\nsecond", "latest"]
+
+            composer.load_text("")
+            await pilot.press("up")
+            assert composer.text == "latest"
+
+            await pilot.press("up")
+            assert composer.text == "first\nsecond"
+
+            await pilot.press("down")
+            assert composer.text == "latest"
+
+            await pilot.press("down")
+            assert composer.text == ""
+
+            await pilot.press("up")
+            composer.insert("!")
+            await pilot.pause()
+            assert app.prompt_history_index is None
+
+            await pilot.press("up")
+            assert composer.text == "latest!"
+
+    asyncio.run(run())
+
+
+def test_submit_composer_records_commands_and_prompts(tmp_path):
+    async def run() -> None:
+        async with MaApp(config_path="missing.json", settings_file=tmp_path / "ma.ini").run_test() as pilot:
+            app = pilot.app
+            composer = app.query_one(ComposerTextArea)
+            handled_commands: list[str] = []
+            prompts: list[str] = []
+
+            async def handle_command(text: str) -> None:
+                handled_commands.append(text)
+
+            app.handle_command = handle_command
+            app.run_chat = lambda text: prompts.append(text)
+
+            composer.load_text("/help")
+            await app.submit_composer()
+            composer.load_text("Explain\nthis")
+            await app.submit_composer()
+            await pilot.pause()
+
+            assert handled_commands == ["/help"]
+            assert prompts == ["Explain\nthis"]
+            assert app.prompt_history[-2:] == ["/help", "Explain\nthis"]
+
+    asyncio.run(run())
+
+
 def test_command_completion_helpers_complete_common_prefix_and_single_match():
     assert complete_command_text("/mo") == "/model"
     assert complete_command_text("/n") == "/n"

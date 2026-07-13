@@ -12,12 +12,23 @@ from ma.settings import AppSettings, load_settings, save_settings, settings_path
 
 def test_settings_round_trip_and_default_path(tmp_path):
     path = settings_path(tmp_path)
-    saved = AppSettings(agent_name="research", model_id="qwen", reasoning_level="medium")
+    saved = AppSettings(
+        agent_name="research",
+        model_id="qwen",
+        reasoning_level="medium",
+        prompt_history=tuple(["first", "two\nlines", "repeat", "repeat", *[f"item {index}" for index in range(10)]]),
+    )
 
     save_settings(saved, path)
 
     assert path.name == "ma.ini"
-    assert load_settings(path) == saved
+    assert load_settings(path) == AppSettings(
+        agent_name="research",
+        model_id="qwen",
+        reasoning_level="medium",
+        prompt_history=saved.prompt_history[-10:],
+    )
+    assert "[history]" in path.read_text(encoding="utf-8")
 
 
 def test_missing_and_malformed_settings_use_defaults(tmp_path):
@@ -32,6 +43,10 @@ def test_missing_and_malformed_settings_use_defaults(tmp_path):
     path.write_text("[ma]\nagent = %broken", encoding="utf-8")
 
     assert load_settings(path) == AppSettings()
+
+    path.write_text("[ma]\nagent = simple\n\n[history]\nitem_bad = ignored\nitem_0 = kept", encoding="utf-8")
+
+    assert load_settings(path) == AppSettings(agent_name="simple", prompt_history=("kept",))
 
 
 def test_startup_restores_available_project_settings(tmp_path):

@@ -87,6 +87,7 @@ When `ma` exits, it writes the active agent, model, and reasoning choice to `ma.
 
 The command palette exposes the same main app commands: Agent, Model, Reasoning, Theme, Download, New, Help, Reload, Notes Save, Notes Clear, and Exit.
 When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names, model names, and theme names.
+With an empty composer, press Up to recall the newest submitted prompt or command. Continue through older/newer entries with Up/Down until you edit the recalled text; then arrows return to normal cursor navigation. The last 10 entries are saved in the `[history]` section of the current directory's `ma.ini`.
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
 The top status line shows the active agent/model, current reasoning level, and current run status: Ready, Working, Needs input, or Executing code.
 Modal windows such as Help, selection pickers, clarification prompts, and download confirmation appear centered over the app.

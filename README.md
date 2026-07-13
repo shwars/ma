@@ -20,6 +20,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Host logging and user-clarification integration tools for agents
 - Optional separate notes/TODO side panes controlled by each agent's `get_props()`
 - Full-width two-line composer with Ctrl+Enter for new lines
+- Persistent per-directory prompt and command history
 
 ## Quick Start
 
@@ -124,7 +125,7 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 - `/notes clear` clears session notes.
 - `/exit` exits the app.
 
-While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer, including available agent names, model names, and theme names.
+While typing a slash command, press Tab to complete the current prefix. `ma` also shows matching completions in muted text above the composer, including available agent names, model names, and theme names. With an empty composer, press Up to recall the newest submitted prompt or command and continue browsing history with Up/Down. Editing a recalled entry returns the arrows to normal cursor navigation. The last 10 submitted entries are stored in the `[history]` section of the local `ma.ini`.
 
 During an active run, press Esc once to show an interrupt warning. Press Esc again within 2 seconds to cancel the current agent run. Partial assistant/reasoning output stays in the transcript.
 
