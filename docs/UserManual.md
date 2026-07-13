@@ -17,7 +17,10 @@ For a local `.env` file, create:
 ```text
 folder_id=your-yandex-folder-id
 api_key=your-yandex-api-key
+MY_PROJECT_SETTING=project-specific-value
 ```
+
+All values from the launch directory's `.env` are loaded when `ma` starts. Custom agents can use `context.env["MY_PROJECT_SETTING"]` for the raw project-local mapping, or `os.getenv("MY_PROJECT_SETTING")` for normal Python code and child processes. Do not print secrets into the transcript.
 
 Credential priority is:
 
@@ -164,6 +167,7 @@ To use host-provided tools:
 ```python
 def set_context(context):
     context.log("My Agent loaded.")
+    project_setting = context.env.get("MY_PROJECT_SETTING")
     agent.tools = [
         *context.notes_tools,
         *context.todo_tools,
@@ -188,6 +192,8 @@ The notes tool accepts `extra` as optional text metadata. Use JSON text there if
 `context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients for agents that need direct API access, such as creating Code Interpreter containers or uploading files.
 
 `context.log(message)` displays a light-green message in the transcript. It is a Python callback for agent code, not a model-callable tool by default.
+
+`context.env` contains the raw values from the launch directory's `.env`. The same values override inherited process variables and are available through `os.getenv(...)`, including to child processes. Keep sensitive values out of logs and answers.
 
 The clarification tool is available through `context.clarification_tools`. It exposes:
 

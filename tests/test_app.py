@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -857,6 +858,7 @@ def test_apply_context_includes_log_and_clarification_tools():
             app.clarification_tools = ["clarify"]
             app.client = "sync-client"
             app.aclient = "async-client"
+            app.dotenv_values = {"AGENT_SETTING": "from-dotenv"}
             app.active_agent = LoadedAgent(
                 name="context",
                 module=Module(),
@@ -871,8 +873,58 @@ def test_apply_context_includes_log_and_clarification_tools():
             assert captured_context.clarification_tools == ["clarify"]
             assert captured_context.client == "sync-client"
             assert captured_context.aclient == "async-client"
+            assert captured_context.env == {"AGENT_SETTING": "from-dotenv"}
 
     asyncio.run(run())
+
+
+def test_app_loads_current_directory_dotenv_into_environment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OVERRIDDEN_SETTING", "inherited")
+    (tmp_path / ".env").write_text(
+        'OVERRIDDEN_SETTING=from-dotenv\nQUOTED_SETTING="quoted value"\n',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"models": []}', encoding="utf-8")
+
+    app = MaApp(config_path=config_path, settings_file=tmp_path / "ma.ini")
+
+    assert app.dotenv_values == {
+        "OVERRIDDEN_SETTING": "from-dotenv",
+        "QUOTED_SETTING": "quoted value",
+    }
+    assert os.environ["OVERRIDDEN_SETTING"] == "from-dotenv"
+    assert os.environ["QUOTED_SETTING"] == "quoted value"
+
+    captured_context = None
+
+    class Module:
+        @staticmethod
+        def set_context(context):
+            nonlocal captured_context
+            captured_context = context
+
+    app.active_agent = LoadedAgent(
+        name="dotenv",
+        module=Module(),
+        agent=object(),
+        props={"display_name": "Dotenv"},
+    )
+    app.apply_context()
+
+    assert captured_context is not None
+    assert captured_context.env == app.dotenv_values
+
+
+def test_app_uses_empty_dotenv_mapping_when_file_is_missing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"models": []}', encoding="utf-8")
+
+    app = MaApp(config_path=config_path, settings_file=tmp_path / "ma.ini")
+
+    assert app.dotenv_values == {}
 
 
 def test_clarification_modal_returns_selected_option():

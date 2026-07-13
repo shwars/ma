@@ -40,7 +40,10 @@ Create a local `.env` file with Yandex Cloud credentials:
 ```text
 folder_id=your-yandex-folder-id
 api_key=your-yandex-api-key
+MY_PROJECT_SETTING=project-specific-value
 ```
+
+Every value in the launch directory's `.env` is loaded into the `ma` process when it starts. Agent code can read project settings explicitly through `context.env["MY_PROJECT_SETTING"]`, or through `os.getenv("MY_PROJECT_SETTING")` when ordinary Python code or child processes need them. Treat these values as sensitive configuration and do not log secrets.
 
 Run the app:
 
@@ -175,6 +178,7 @@ Agents can optionally receive host context and declare UI properties:
 ```python
 def set_context(context):
     context.log("My Agent loaded.")
+    project_setting = context.env.get("MY_PROJECT_SETTING")
     agent.tools = [
         *context.notes_tools,
         *context.todo_tools,
@@ -194,7 +198,7 @@ Run `/reload` after adding or editing an agent.
 
 Agent discovery is multi-directory. By default, `ma` scans the bundled repo `agents/` directory first and the current working directory's `agents/` directory second, so project-local agents can override bundled examples. Use `--agents-dir path1 path2` to replace that default lookup with explicit directories; when duplicate names exist, the later directory wins.
 
-`context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients. `context.log(message)` writes a light-green message to the transcript. `context.clarification_tools` exposes `ask_user_clarification(question, options, allow_custom_answer=False)`, where each option has `title` and `detail`; it returns the selected `{title, detail}`.
+`context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients. `context.log(message)` writes a light-green message to the transcript. `context.clarification_tools` exposes `ask_user_clarification(question, options, allow_custom_answer=False)`, where each option has `title` and `detail`; it returns the selected `{title, detail}`. `context.env` contains the raw key/value pairs from the launch directory's `.env`; `os.getenv(...)` exposes the effective process environment, including those values for child processes. Keep credentials and other secrets out of transcript messages.
 
 ## Development
 

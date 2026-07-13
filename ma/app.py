@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import hashlib
+import os
 import time
 from os.path import commonprefix
 from datetime import datetime
@@ -19,7 +20,7 @@ from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
 
 from .agent_loader import AgentLoader, LoadedAgent
-from .config import AppConfig, ModelChoice, load_config
+from .config import AppConfig, ModelChoice, load_config, load_dotenv
 from .context import AgentContext
 from .runtime import build_clients, build_model
 from .settings import AppSettings, load_settings, save_settings, settings_path
@@ -806,6 +807,8 @@ class MaApp(App[None]):
         settings_file: Path | None = None,
     ) -> None:
         super().__init__()
+        self.dotenv_values = load_dotenv(Path.cwd() / ".env")
+        os.environ.update(self.dotenv_values)
         self.config: AppConfig = load_config(config_path)
         self.settings_file = settings_file or settings_path()
         self.saved_settings = load_settings(self.settings_file)
@@ -1274,6 +1277,7 @@ class MaApp(App[None]):
             todo_tools=self.todo_tools,
             clarification_tools=self.clarification_tools,
             log=self.log_agent_message,
+            env=dict(self.dotenv_values),
         )
         self.active_agent.set_context(context)
 

@@ -1,6 +1,6 @@
 [project]
 name = "ma"
-version = "0.1.0"
+version = "0.1.2"
 description = "Mitya's Agent: an educational terminal chat for OpenAI Agents SDK on Yandex Cloud"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any
 
@@ -24,3 +24,4 @@ class AgentContext:
     todo_tools: list[Any]
     clarification_tools: list[Any]
     log: Callable[[str], None]
+    env: dict[str, str] = field(default_factory=dict)

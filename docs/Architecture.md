@@ -6,7 +6,7 @@
 
 - `ma.cli` exposes the `ma` console command.
 - `ma.app` contains the Textual UI: transcript, input line, status line, selectors, and optional right-side notes/TODO panes.
-- `ma.config` loads optional `config.json`, optional `.env`, and process environment credentials.
+- `ma.config` loads optional `config.json`, optional `.env`, and process environment credentials. `ma.app` also applies every current-directory `.env` value to the process before agents are initialized.
 - `ma.settings` loads and saves per-directory `ma.ini` startup settings.
 - `ma.runtime` creates the Yandex-backed Agents SDK model:
   - `AsyncOpenAI(base_url="https://ai.api.cloud.yandex.net/v1", api_key=..., project=folder_id)`
@@ -59,6 +59,7 @@ Agents receive an `AgentContext` with:
 - `reasoning_level`
 - `folder_id`
 - `api_key`
+- `env`: raw key/value pairs from the launch directory's `.env`
 - `client`
 - `aclient`
 - `notes_store`
@@ -83,6 +84,8 @@ When a reasoning level is selected for the current model, `ma` applies it to the
 3. `YANDEX_FOLDER_ID` / `YANDEX_API_KEY` in `.env`
 4. `YANDEX_FOLDER_ID` / `YANDEX_API_KEY` process environment variables
 5. `folder_id` / `api_key` process environment variables
+
+At startup, `ma.app` loads the complete current-directory `.env` mapping once. It copies those values into `os.environ`, overriding inherited process values so agent subprocesses inherit them, and passes the raw mapping as `AgentContext.env`. Agents can use `context.env["MY_PROJECT_SETTING"]` for explicit project-local configuration or `os.getenv("MY_PROJECT_SETTING")` for normal Python/environment access. This mapping may contain secrets and must not be logged.
 
 Models can be configured with `model_id`, `model_uri`, or `model`. `model_id` is preferred in examples. Any `%folder_id%` placeholder in configured model IDs is replaced after credentials are resolved.
 
