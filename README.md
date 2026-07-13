@@ -55,6 +55,8 @@ To start `ma` from any working directory on Windows, put a small `ma.bat` somewh
 
 When no `--agents-dir` is provided, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also checks `./agents` in the current working directory when it exists. Current-directory agents override bundled agents with the same folder name.
 
+`ma` saves the active agent, model, and reasoning choice in `ma.ini` in the directory where it is launched. This keeps startup settings aligned with local agents and configuration. Missing or unavailable saved values fall back to the normal defaults.
+
 ## Run From GitHub
 
 You can run `ma` without cloning the repository. `uv` installs the application from GitHub into an isolated environment while keeping your current directory as the working directory, so its `.env`, `config.json`, and local `./agents/` directory continue to work.

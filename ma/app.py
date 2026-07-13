@@ -22,6 +22,7 @@ from .agent_loader import AgentLoader, LoadedAgent
 from .config import AppConfig, ModelChoice, load_config
 from .context import AgentContext
 from .runtime import build_clients, build_model
+from .settings import AppSettings, load_settings, save_settings, settings_path
 from .stores import Note, NotesStore, TodoItem, TodoStore
 from .tools import build_clarification_tools, build_notes_tools, build_todo_tools
 
@@ -790,9 +791,16 @@ class MaApp(App[None]):
         ("ctrl+r", "reload_agents", "Reload"),
     ]
 
-    def __init__(self, config_path: Path | None = None, agents_dir: Path | str | Iterable[Path | str] = "agents") -> None:
+    def __init__(
+        self,
+        config_path: Path | None = None,
+        agents_dir: Path | str | Iterable[Path | str] = "agents",
+        settings_file: Path | None = None,
+    ) -> None:
         super().__init__()
         self.config: AppConfig = load_config(config_path)
+        self.settings_file = settings_file or settings_path()
+        self.saved_settings = load_settings(self.settings_file)
         self.loader = AgentLoader(agents_dir)
         self.notes_store = NotesStore()
         self.todo_store = TodoStore()
@@ -806,6 +814,7 @@ class MaApp(App[None]):
         self.client: Any = None
         self.aclient: Any = None
         self.reasoning_by_model_id: dict[str, str | None] = {}
+        self._restore_reasoning_setting()
         self.side_refresh_index = 0
         self.history: list[Any] = []
         self.busy = False
@@ -818,10 +827,41 @@ class MaApp(App[None]):
         self.interrupt_requested = False
 
     def _initial_model_choice(self) -> ModelChoice | None:
+        if self.saved_settings.model_id:
+            saved_model = next(
+                (model for model in self.config.models if model.id == self.saved_settings.model_id),
+                None,
+            )
+            if saved_model is not None:
+                return saved_model
         return next(
             (model for model in self.config.models if not model.is_agent_default),
             self.config.models[0] if self.config.models else None,
         )
+
+    def _restore_reasoning_setting(self) -> None:
+        if not self.selected_model or self.selected_model.id != self.saved_settings.model_id:
+            return
+        reasoning = self.saved_settings.reasoning_level
+        valid_levels = {value for value, _ in REASONING_CHOICES}
+        if reasoning in valid_levels:
+            self.reasoning_by_model_id[self.selected_model.id] = (
+                None if reasoning == "agent_default" else reasoning
+            )
+
+    def current_settings(self) -> AppSettings:
+        return AppSettings(
+            agent_name=self.active_agent.name if self.active_agent else None,
+            model_id=self.selected_model.id if self.selected_model else None,
+            reasoning_level=self.selected_reasoning_level or "agent_default",
+        )
+
+    def save_current_settings(self) -> None:
+        save_settings(self.current_settings(), self.settings_file)
+
+    def exit(self, result: Any = None, message: Any = None) -> None:
+        self.save_current_settings()
+        super().exit(result, message)
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status-header")
@@ -1064,7 +1104,8 @@ class MaApp(App[None]):
             return
 
         active_name = self.active_agent.name if self.active_agent else (
-            "simple" if "simple" in self.agent_names else self.agent_names[0]
+            self.saved_settings.agent_name
+            or ("simple" if "simple" in self.agent_names else self.agent_names[0])
         )
         if active_name not in self.agent_names:
             active_name = self.agent_names[0]

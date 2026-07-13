@@ -7,6 +7,7 @@
 - `ma.cli` exposes the `ma` console command.
 - `ma.app` contains the Textual UI: transcript, input line, status line, selectors, and optional right-side notes/TODO panes.
 - `ma.config` loads optional `config.json`, optional `.env`, and process environment credentials.
+- `ma.settings` loads and saves per-directory `ma.ini` startup settings.
 - `ma.runtime` creates the Yandex-backed Agents SDK model:
   - `AsyncOpenAI(base_url="https://ai.api.cloud.yandex.net/v1", api_key=..., project=folder_id)`
   - `OpenAIResponsesModel(model=model_uri, openai_client=...)`
@@ -88,6 +89,10 @@ Models can be configured with `model_id`, `model_uri`, or `model`. `model_id` is
 When `config.json` is missing and both credentials are available, `ma` queries Yandex Cloud's OpenAI-compatible models endpoint and uses the returned model IDs in `/model`. Only Responses-compatible text models with the `gpt://` scheme are shown in the model selector.
 
 The first model option is always `Agent Default`. Selecting it means `ma` does not inject a model into the root agent, so the agent file is responsible for choosing its own model.
+
+## Per-Directory Settings
+
+`ma` stores its active agent folder name, selected model ID, and selected reasoning level in `Path.cwd() / "ma.ini"`. It restores the model and reasoning before initial model construction, then restores the agent after discovery. Missing, malformed, or unavailable settings fall back to normal startup behavior. The central Textual `exit()` path writes the current selections, covering `/exit` and the palette Exit command.
 
 ## Built-In Data Analyst
 

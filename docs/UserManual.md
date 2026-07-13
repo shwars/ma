@@ -61,6 +61,8 @@ To start `ma` from any working directory on Windows, put this `ma.bat` file some
 
 Without `--agents-dir`, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also loads agents from `./agents` in the current working directory when that folder exists. Current-directory agents override bundled agents with the same folder name. Use `--agents-dir path1 path2` to replace the default lookup with explicit directories; later directories win for duplicate agent names.
 
+When `ma` exits, it writes the active agent, model, and reasoning choice to `ma.ini` in the current working directory. This file is per project/folder, so local agent and model choices do not leak into other directories. If a saved agent or model is no longer available, `ma` uses its normal startup default.
+
 ## Commands
 
 - `/agent` opens the agent selector.
