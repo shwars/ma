@@ -82,13 +82,14 @@ When `ma` exits, it writes the active agent, model, and reasoning choice to `ma.
 - `/download skip` leaves generated files in the remote container and only displays their names.
 - `/download all` downloads every file from the active agent's exposed Code Interpreter container.
 - `/new` starts a new chat session, clearing conversation history, session notes/TODOs, transcript, and downloaded-file tracking.
+- `/save <filename>` writes the current session to `.txt`, `.md`, `.json`, or `.csv`; the extension chooses the format and existing files are replaced. It includes chronological user messages, commands, final assistant/reasoning blocks, tool calls/outputs, Code Interpreter activity, agent logs, and transcript events.
 - `/help` opens the command help window.
 - `/reload` reloads agents from disk.
 - `/notes save` saves current notes to a markdown file.
 - `/notes clear` clears current notes.
 - `/exit` exits the app.
 
-The command palette exposes the same main app commands: Agent, Model, Reasoning, Theme, Download, New, Help, Reload, Notes Save, Notes Clear, and Exit.
+The command palette exposes the same main app commands: Agent, Model, Reasoning, Theme, Download, New, Help, Reload, Save Session Output, Notes Save, Notes Clear, and Exit. **Save Session Output** puts `/save ` in the composer, ready for a filename.
 When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names, model names, and theme names.
 With an empty composer, press Up to recall the newest submitted prompt or command. Continue through older/newer entries with Up/Down until you edit the recalled text; then arrows return to normal cursor navigation. The last 10 entries are saved in the `[history]` section of the current directory's `ma.ini`.
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.

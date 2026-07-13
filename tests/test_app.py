@@ -927,6 +927,25 @@ def test_app_uses_empty_dotenv_mapping_when_file_is_missing(tmp_path, monkeypatc
     assert app.dotenv_values == {}
 
 
+def test_save_session_command_writes_session_and_palette_action_prefills_composer(tmp_path):
+    async def run() -> None:
+        path = tmp_path / "session.json"
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            app.record_session_event("user", "Hello")
+            app.record_session_event("tool_output", "Full tool output")
+            await app.handle_command(f"/save {path}")
+
+            assert path.exists()
+            assert '"tool_output"' in path.read_text(encoding="utf-8")
+
+            app.action_save_session_output()
+            composer = app.query_one(ComposerTextArea)
+            assert composer.text == "/save "
+
+    asyncio.run(run())
+
+
 def test_clarification_modal_returns_selected_option():
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:

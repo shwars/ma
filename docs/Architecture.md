@@ -8,6 +8,7 @@
 - `ma.app` contains the Textual UI: transcript, input line, status line, selectors, and optional right-side notes/TODO panes.
 - `ma.config` loads optional `config.json`, optional `.env`, and process environment credentials. `ma.app` also applies every current-directory `.env` value to the process before agents are initialized.
 - `ma.settings` loads and saves per-directory `ma.ini` startup settings.
+- `ma.session` records chronological transcript events and writes session exports as text, Markdown, JSON, or CSV.
 - `ma.runtime` creates the Yandex-backed Agents SDK model:
   - `AsyncOpenAI(base_url="https://ai.api.cloud.yandex.net/v1", api_key=..., project=folder_id)`
   - `OpenAIResponsesModel(model=model_uri, openai_client=...)`

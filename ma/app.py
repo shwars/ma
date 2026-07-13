@@ -23,6 +23,7 @@ from .agent_loader import AgentLoader, LoadedAgent
 from .config import AppConfig, ModelChoice, load_config, load_dotenv
 from .context import AgentContext
 from .runtime import build_clients, build_model
+from .session import SUPPORTED_SESSION_EXTENSIONS, SessionEvent, new_session_event, save_session
 from .settings import AppSettings, load_settings, save_settings, settings_path
 from .stores import Note, NotesStore, TodoItem, TodoStore
 from .tools import build_clarification_tools, build_notes_tools, build_todo_tools
@@ -56,6 +57,7 @@ COMMAND_COMPLETIONS = [
     "/reasoning high",
     "/reasoning xhigh",
     "/reload",
+    "/save",
     "/theme",
     "/notes save",
     "/notes clear",
@@ -304,6 +306,7 @@ class HelpScreen(ModalScreen[None]):
                 "/download all       Download all files from the active agent container.",
                 "/new                Start a new chat session and clear session state.",
                 "/reload             Reload agents from disk.",
+                "/save <filename>    Save the current session as txt, md, json, or csv.",
                 "/notes save         Save current notes to a markdown file.",
                 "/notes clear        Clear current notes.",
                 "/help               Show this help.",
@@ -831,6 +834,8 @@ class MaApp(App[None]):
         self.recalled_prompt_text: str | None = None
         self.side_refresh_index = 0
         self.history: list[Any] = []
+        self.session_events: list[SessionEvent] = []
+        self.session_started_at = datetime.now().astimezone().isoformat(timespec="seconds")
         self.busy = False
         self.starting = True
         self.download_mode = "ask"
@@ -890,7 +895,7 @@ class MaApp(App[None]):
         yield Static("", id="completion-hint")
         yield ComposerTextArea(
             "",
-            placeholder="Message, or /agent /model /theme /download /reasoning /new /help /exit",
+            placeholder="Message, or /agent /model /theme /download /reasoning /save /new /help /exit",
             id="composer",
             show_line_numbers=False,
             soft_wrap=True,
@@ -1001,6 +1006,7 @@ class MaApp(App[None]):
             return
         self.record_prompt_history(text)
         if text.startswith("/"):
+            self.record_session_event("command", text)
             await self.handle_command(text)
             return
         self.active_run_worker = self.run_chat(text)
@@ -1092,6 +1098,8 @@ class MaApp(App[None]):
             self.switch_reasoning(command.split(maxsplit=1)[1])
         elif command == "/reload":
             await self.reload_agents()
+        elif command == "/save" or command.startswith("/save "):
+            self.save_current_session(stripped[len("/save") :].strip())
         elif command in {"/exit", "/quit"}:
             self.exit()
         elif command == "/notes clear":
@@ -1244,6 +1252,8 @@ class MaApp(App[None]):
             self.add_event("Cannot start a new session while a run is active.")
             return
         self.history.clear()
+        self.session_events.clear()
+        self.session_started_at = datetime.now().astimezone().isoformat(timespec="seconds")
         self.notes_store.clear()
         self.todo_store.clear()
         self.downloaded_file_ids.clear()
@@ -1308,6 +1318,12 @@ class MaApp(App[None]):
     def action_save_notes(self) -> None:
         self.save_notes()
 
+    def action_save_session_output(self) -> None:
+        composer = self.query_one("#composer", ComposerTextArea)
+        composer.load_text("/save ")
+        composer.move_cursor((0, len("/save ")))
+        composer.focus()
+
     def action_clear_notes(self) -> None:
         self.clear_notes()
 
@@ -1320,6 +1336,7 @@ class MaApp(App[None]):
         yield SystemCommand("New", "Start a new chat session", self.action_new_session)
         yield SystemCommand("Help", "Show available commands", self.action_show_help)
         yield SystemCommand("Reload", "Reload agents from disk", self.action_reload_agents)
+        yield SystemCommand("Save Session Output", "Enter a filename to save the current session", self.action_save_session_output)
         yield SystemCommand("Notes Save", "Save session notes to markdown", self.action_save_notes)
         yield SystemCommand("Notes Clear", "Clear session notes", self.action_clear_notes)
         yield SystemCommand("Exit", "Exit the application", self.action_quit)
@@ -1332,10 +1349,57 @@ class MaApp(App[None]):
         self.notes_store.save_markdown(path)
         self.add_event(f"Saved notes to {path}.")
 
+    def save_current_session(self, filename: str) -> None:
+        if not filename:
+            extensions = ", ".join(sorted(SUPPORTED_SESSION_EXTENSIONS))
+            self.add_event(f"Usage: /save <filename> ({extensions}).")
+            return
+        path = Path(filename)
+        try:
+            saved_path = save_session(path, self.session_events, self.session_metadata())
+        except (OSError, ValueError) as exc:
+            self.add_event(f"Could not save session: {exc}")
+            return
+        self.add_event(f"Saved session to {saved_path}.")
+
+    def record_session_event(
+        self,
+        kind: str,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if not content:
+            return
+        self.session_events.append(
+            new_session_event(len(self.session_events) + 1, kind, str(content), metadata)
+        )
+
+    def session_metadata(self) -> dict[str, str | None]:
+        return {
+            "started_at": self.session_started_at,
+            "agent": self.active_agent.name if self.active_agent else None,
+            "model": self.selected_model.id if self.selected_model else None,
+            "reasoning": self.selected_reasoning_level or "agent_default",
+        }
+
     def clear_notes(self) -> None:
         count = self.notes_store.clear()
         self.add_event(f"Cleared {count} notes.")
         self.refresh_side()
+
+    def finalize_assistant_block(self, block: AssistantBlock) -> None:
+        if block.finalized:
+            return
+        block.finalize()
+        if block.text.strip():
+            self.record_session_event("assistant", block.text)
+
+    def finalize_reasoning_block(self, block: ReasoningBlock) -> None:
+        if block.finalized:
+            return
+        block.finalize()
+        if block.text.strip():
+            self.record_session_event("reasoning", block.text)
 
     @work(exclusive=True)
     async def run_chat(self, text: str) -> None:
@@ -1355,6 +1419,7 @@ class MaApp(App[None]):
 
         self.busy = True
         self.set_agent_status("Working")
+        self.record_session_event("user", text)
         user_widget = Static(text, classes="user-message")
         transcript = self.query_one("#transcript", VerticalScroll)
         await transcript.mount(user_widget)
@@ -1379,7 +1444,7 @@ class MaApp(App[None]):
                     stream_event.data, ResponseTextDeltaEvent
                 ):
                     if current_reasoning_block is not None:
-                        current_reasoning_block.finalize()
+                        self.finalize_reasoning_block(current_reasoning_block)
                         current_reasoning_block = None
                     delta = getattr(stream_event.data, "delta", "")
                     if delta and (current_assistant_block is not None or delta.strip()):
@@ -1393,7 +1458,7 @@ class MaApp(App[None]):
                     delta = reasoning_delta_text(stream_event.data)
                     if delta and (current_reasoning_block is not None or delta.strip()):
                         if current_assistant_block is not None:
-                            current_assistant_block.finalize()
+                            self.finalize_assistant_block(current_assistant_block)
                             current_assistant_block = None
                         if current_reasoning_block is None:
                             current_reasoning_block = ReasoningBlock()
@@ -1403,36 +1468,41 @@ class MaApp(App[None]):
                         transcript.scroll_end(animate=False)
                 elif stream_event.type == "run_item_stream_event":
                     if current_assistant_block is not None:
-                        current_assistant_block.finalize()
+                        self.finalize_assistant_block(current_assistant_block)
                         current_assistant_block = None
                     if current_reasoning_block is not None:
-                        current_reasoning_block.finalize()
+                        self.finalize_reasoning_block(current_reasoning_block)
                         current_reasoning_block = None
                     if self.render_code_interpreter_item(stream_event.item):
                         await self.handle_code_interpreter_files([stream_event.item])
                     else:
-                        description = None
-                        if not should_skip_completed_reasoning(
+                        skipped_reasoning = should_skip_completed_reasoning(
                             stream_event.item,
                             "".join(streamed_reasoning_parts),
-                        ):
+                        )
+                        description = None
+                        if not skipped_reasoning:
+                            session_event = self.session_event_from_run_item(stream_event.item)
+                            if session_event is not None:
+                                kind, content, metadata = session_event
+                                self.record_session_event(kind, content, metadata)
                             description = self.describe_run_item(stream_event.item)
                         if description:
-                            self.add_event(description)
+                            self.add_event(description, record=False)
                     self.refresh_side()
                 elif stream_event.type == "agent_updated_stream_event":
                     if current_assistant_block is not None:
-                        current_assistant_block.finalize()
+                        self.finalize_assistant_block(current_assistant_block)
                         current_assistant_block = None
                     if current_reasoning_block is not None:
-                        current_reasoning_block.finalize()
+                        self.finalize_reasoning_block(current_reasoning_block)
                         current_reasoning_block = None
-                    self.add_event(f"Agent: {stream_event.new_agent.name}")
+                    self.add_event(f"Agent: {stream_event.new_agent.name}", kind="agent")
 
             if current_assistant_block is not None:
-                current_assistant_block.finalize()
+                self.finalize_assistant_block(current_assistant_block)
             if current_reasoning_block is not None:
-                current_reasoning_block.finalize()
+                self.finalize_reasoning_block(current_reasoning_block)
 
             input_items = None
             if hasattr(result, "to_input_list"):
@@ -1444,9 +1514,9 @@ class MaApp(App[None]):
             self.refresh_side()
         except asyncio.CancelledError:
             if current_assistant_block is not None:
-                current_assistant_block.finalize()
+                self.finalize_assistant_block(current_assistant_block)
             if current_reasoning_block is not None:
-                current_reasoning_block.finalize()
+                self.finalize_reasoning_block(current_reasoning_block)
             self.add_event("Run interrupted.")
             raise
         except Exception as exc:
@@ -1492,6 +1562,36 @@ class MaApp(App[None]):
             return None
         return f"Event: {item_type or item}"
 
+    def session_event_from_run_item(
+        self,
+        item: Any,
+    ) -> tuple[str, str, dict[str, str]] | None:
+        item_type = str(getattr(item, "type", ""))
+        raw = getattr(item, "raw_item", None)
+        if is_reasoning_item(item):
+            text = reasoning_item_text(item)
+            return ("reasoning", text or "Reasoning item.", {"item_type": item_type})
+        if item_type == "tool_call_item":
+            action = getattr(raw, "action", None)
+            name = str(getattr(raw, "name", "") or getattr(action, "query", "") or getattr(raw, "type", "unknown"))
+            arguments = getattr(raw, "arguments", None)
+            metadata = {"item_type": item_type, "name": name}
+            if arguments is not None:
+                metadata["arguments"] = str(arguments)
+            query = getattr(action, "query", None)
+            if query:
+                metadata["query"] = str(query)
+            return ("tool_call", name, metadata)
+        if item_type == "tool_call_output_item":
+            return (
+                "tool_output",
+                str(getattr(item, "output", "")),
+                {"item_type": item_type},
+            )
+        if item_type == "message_output_item":
+            return None
+        return ("event", f"Event: {item_type or item}", {"item_type": item_type})
+
     def render_code_interpreter_item(self, item: Any) -> bool:
         raw = getattr(item, "raw_item", None)
         if not is_code_interpreter_raw(raw):
@@ -1510,6 +1610,7 @@ class MaApp(App[None]):
         return True
 
     def add_code_block(self, code: str) -> None:
+        self.record_session_event("code", code, {"source": "code_interpreter"})
         transcript = self.query_one("#transcript", VerticalScroll)
         collapsible = Collapsible(
             Static(Text(code, style="white")),
@@ -1521,6 +1622,7 @@ class MaApp(App[None]):
         transcript.scroll_end(animate=False)
 
     def add_code_output(self, output: str) -> None:
+        self.record_session_event("code_output", output, {"source": "code_interpreter"})
         transcript = self.query_one("#transcript", VerticalScroll)
         transcript.mount(Static(Text(output, style="dark_green"), classes="code-output"))
         transcript.scroll_end(animate=False)
@@ -1615,14 +1717,24 @@ class MaApp(App[None]):
         content = self.client.files.content(file_id)
         return write_downloaded_file(Path.cwd(), filename, content.read())
 
-    def add_event(self, text: str) -> None:
+    def add_event(
+        self,
+        text: str,
+        *,
+        kind: str = "event",
+        metadata: dict[str, Any] | None = None,
+        record: bool = True,
+    ) -> None:
         if not text:
             return
+        if record:
+            self.record_session_event(kind, str(text), metadata)
         transcript = self.query_one("#transcript", VerticalScroll)
         transcript.mount(Static(Text(str(text), style="dim"), classes="event"))
         transcript.scroll_end(animate=False)
 
     def log_agent_message(self, message: str) -> None:
+        self.record_session_event("agent_log", str(message))
         transcript = self.query_one("#transcript", VerticalScroll)
         transcript.mount(Static(Text(str(message), style="light_green"), classes="agent-log"))
         transcript.scroll_end(animate=False)

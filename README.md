@@ -21,6 +21,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Optional separate notes/TODO side panes controlled by each agent's `get_props()`
 - Full-width two-line composer with Ctrl+Enter for new lines
 - Persistent per-directory prompt and command history
+- Session export to text, Markdown, JSON, or CSV with `/save <filename>`
 
 ## Quick Start
 
@@ -199,6 +200,10 @@ Run `/reload` after adding or editing an agent.
 Agent discovery is multi-directory. By default, `ma` scans the bundled repo `agents/` directory first and the current working directory's `agents/` directory second, so project-local agents can override bundled examples. Use `--agents-dir path1 path2` to replace that default lookup with explicit directories; when duplicate names exist, the later directory wins.
 
 `context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients. `context.log(message)` writes a light-green message to the transcript. `context.clarification_tools` exposes `ask_user_clarification(question, options, allow_custom_answer=False)`, where each option has `title` and `detail`; it returns the selected `{title, detail}`. `context.env` contains the raw key/value pairs from the launch directory's `.env`; `os.getenv(...)` exposes the effective process environment, including those values for child processes. Keep credentials and other secrets out of transcript messages.
+
+## Saving Sessions
+
+Use `/save <filename>` to export the current session. Supported extensions are `.txt`, `.md`, `.json`, and `.csv`; the extension selects the output format and an existing file is replaced. Exports include chronological user messages, commands, completed assistant and reasoning blocks, tool calls and full outputs, Code Interpreter code/logs, agent logs, handoffs, and transcript events. The command palette includes **Save Session Output**, which places `/save ` in the composer so you can enter the filename.
 
 ## Development
 
