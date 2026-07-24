@@ -10,6 +10,7 @@ class AppSettings:
     agent_name: str | None = None
     model_id: str | None = None
     reasoning_level: str | None = None
+    max_turns: int | None = None
     prompt_history: tuple[str, ...] = ()
 
 
@@ -32,11 +33,13 @@ def load_settings(path: Path | None = None) -> AppSettings:
             agent_name=_value(section.get("agent")),
             model_id=_value(section.get("model")),
             reasoning_level=_value(section.get("reasoning")),
+            max_turns=_positive_int(section.get("maxturns")),
         )
         return AppSettings(
             agent_name=settings.agent_name,
             model_id=settings.model_id,
             reasoning_level=settings.reasoning_level,
+            max_turns=settings.max_turns,
             prompt_history=_load_history(parser),
         )
     except configparser.Error:
@@ -49,6 +52,7 @@ def save_settings(settings: AppSettings, path: Path | None = None) -> None:
         "agent": settings.agent_name or "",
         "model": settings.model_id or "",
         "reasoning": settings.reasoning_level or "agent_default",
+        "maxturns": str(settings.max_turns) if settings.max_turns is not None else "agent_default",
     }
     parser["history"] = {
         f"item_{index}": entry for index, entry in enumerate(settings.prompt_history[-10:])
@@ -63,6 +67,14 @@ def save_settings(settings: AppSettings, path: Path | None = None) -> None:
 def _value(value: str | None) -> str | None:
     cleaned = (value or "").strip()
     return cleaned or None
+
+
+def _positive_int(value: str | None) -> int | None:
+    try:
+        number = int(value or "")
+    except ValueError:
+        return None
+    return number if number > 0 else None
 
 
 def _load_history(parser: configparser.ConfigParser) -> tuple[str, ...]:

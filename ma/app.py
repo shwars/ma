@@ -46,6 +46,8 @@ COMMAND_COMPLETIONS = [
     "/download ask",
     "/download skip",
     "/help",
+    "/maxturns",
+    "/maxturns agent_default",
     "/model",
     "/new",
     "/reasoning",
@@ -301,6 +303,7 @@ class HelpScreen(ModalScreen[None]):
                 "/agent [name]       Select the active agent.",
                 "/model [model]      Select the active model.",
                 "/reasoning [level]  Set reasoning level for the current model.",
+                "/maxturns [n]       Override agent max turns; agent_default clears it.",
                 "/theme [name]       Select the Textual UI theme.",
                 "/download [mode]    Set Code Interpreter file downloads: auto, ask, skip.",
                 "/download all       Download all files from the active agent container.",
@@ -829,6 +832,7 @@ class MaApp(App[None]):
         self.aclient: Any = None
         self.reasoning_by_model_id: dict[str, str | None] = {}
         self._restore_reasoning_setting()
+        self.max_turns_override = self.saved_settings.max_turns
         self.prompt_history = list(self.saved_settings.prompt_history)
         self.prompt_history_index: int | None = None
         self.recalled_prompt_text: str | None = None
@@ -873,6 +877,7 @@ class MaApp(App[None]):
             agent_name=self.active_agent.name if self.active_agent else None,
             model_id=self.selected_model.id if self.selected_model else None,
             reasoning_level=self.selected_reasoning_level or "agent_default",
+            max_turns=self.max_turns_override,
             prompt_history=tuple(self.prompt_history),
         )
 
@@ -944,7 +949,8 @@ class MaApp(App[None]):
         status = Text()
         status.append(f"● {self.agent_status}", style=style)
         status.append(
-            f"  ma  Agent: {agent}  Model: {model}  Reasoning: {reasoning}  Download: {self.download_mode}",
+            f"  ma  Agent: {agent}  Model: {model}  Reasoning: {reasoning}  "
+            f"Max turns: {self.max_turns_display_name()}  Download: {self.download_mode}",
             style="white",
         )
         header.first().update(status)
@@ -955,6 +961,11 @@ class MaApp(App[None]):
         level = self.reasoning_by_model_id.get(self.selected_model.id)
         value = "agent_default" if level is None else level
         return next(label for choice, label in REASONING_CHOICES if choice == value)
+
+    def max_turns_display_name(self) -> str:
+        if self.max_turns_override is not None:
+            return str(self.max_turns_override)
+        return f"Agent Default ({self.effective_max_turns})"
 
     def complete_command(self) -> None:
         composer = self.query_one("#composer", ComposerTextArea)
@@ -1096,6 +1107,10 @@ class MaApp(App[None]):
             await self.choose_reasoning()
         elif command.startswith("/reasoning "):
             self.switch_reasoning(command.split(maxsplit=1)[1])
+        elif command == "/maxturns":
+            self.add_event(f"Max turns: {self.max_turns_display_name()}.")
+        elif command.startswith("/maxturns "):
+            self.switch_max_turns(command.split(maxsplit=1)[1])
         elif command == "/reload":
             await self.reload_agents()
         elif command == "/save" or command.startswith("/save "):
@@ -1229,6 +1244,22 @@ class MaApp(App[None]):
         self.apply_context()
         self.update_status_header()
 
+    def switch_max_turns(self, value: str) -> None:
+        normalized = value.strip().lower()
+        if normalized == "agent_default":
+            self.max_turns_override = None
+        else:
+            try:
+                max_turns = int(normalized)
+            except ValueError:
+                max_turns = 0
+            if max_turns <= 0:
+                self.add_event("Max turns must be a positive integer or agent_default.")
+                return
+            self.max_turns_override = max_turns
+        self.add_event(f"Max turns: {self.max_turns_display_name()}.")
+        self.update_status_header()
+
     def switch_download_mode(self, mode: str) -> None:
         normalized = mode.strip().lower()
         if normalized not in DOWNLOAD_MODES:
@@ -1268,6 +1299,12 @@ class MaApp(App[None]):
         if not self.selected_model:
             return None
         return self.reasoning_by_model_id.get(self.selected_model.id)
+
+    @property
+    def effective_max_turns(self) -> int:
+        if self.max_turns_override is not None:
+            return self.max_turns_override
+        return self.active_agent.max_turns if self.active_agent else 10
 
     def apply_context(self) -> None:
         if not self.active_agent:
@@ -1324,6 +1361,12 @@ class MaApp(App[None]):
         composer.move_cursor((0, len("/save ")))
         composer.focus()
 
+    def action_max_turns(self) -> None:
+        composer = self.query_one("#composer", ComposerTextArea)
+        composer.load_text("/maxturns ")
+        composer.move_cursor((0, len("/maxturns ")))
+        composer.focus()
+
     def action_clear_notes(self) -> None:
         self.clear_notes()
 
@@ -1331,6 +1374,7 @@ class MaApp(App[None]):
         yield SystemCommand("Agent", "Select the active agent", self.action_choose_agent)
         yield SystemCommand("Model", "Select the active model", self.action_choose_model)
         yield SystemCommand("Reasoning", "Set reasoning level for the current model", self.action_choose_reasoning)
+        yield SystemCommand("Max Turns", "Override the active agent's max turns", self.action_max_turns)
         yield SystemCommand("Theme", "Select the UI theme", self.action_choose_theme)
         yield SystemCommand("Download", "Set Code Interpreter file download mode", self.action_choose_download_mode)
         yield SystemCommand("New", "Start a new chat session", self.action_new_session)
@@ -1438,7 +1482,11 @@ class MaApp(App[None]):
 
             from agents import Runner
 
-            result = Runner.run_streamed(self.active_agent.agent, run_input)
+            result = Runner.run_streamed(
+                self.active_agent.agent,
+                run_input,
+                max_turns=self.effective_max_turns,
+            )
             async for stream_event in result.stream_events():
                 if stream_event.type == "raw_response_event" and isinstance(
                     stream_event.data, ResponseTextDeltaEvent

@@ -16,6 +16,7 @@
 - `ma.stores` and `ma.tools` provide session-scoped notes and TODO tools.
 - `agents/data_analyst/filesystem_tools.py` provides reusable local file tools for Data Analyst-style agents.
 - `agents/pro_analyst/skill_tools.py` and `filesystem_tools.py` provide markdown skill loading plus advanced local file/command tools.
+- `agents/wiki-agent` provides a streamed Researcher-to-Conceptualizer handoff pipeline and local concept-graph/export tools.
 
 ## Agent Contract
 
@@ -41,10 +42,11 @@ def get_props() -> dict: ...
     "display_name": "<Folder Name>",
     "uses_notes": False,
     "uses_todo": False,
+    "max_turns": 10,
 }
 ```
 
-Agents may also return `"container_id": "<code-interpreter-container-id>"` when they own a Code Interpreter container. `LoadedAgent.set_context()` refreshes props after calling `set_context(context)`, so runtime values created during context application are visible to the UI.
+Agents may override `max_turns` for intentionally long workflows, while agents that omit it retain the 10-turn behavior. The user may override that value with `/maxturns <n>` and return to the agent value with `/maxturns agent_default`. Agents may also return `"container_id": "<code-interpreter-container-id>"` when they own a Code Interpreter container. `LoadedAgent.set_context()` refreshes props after calling `set_context(context)`, so runtime values created during context application are visible to the UI.
 
 The loader imports agent files by path under an internal module name. This avoids colliding with the OpenAI Agents SDK package, which is also named `agents`.
 
@@ -96,7 +98,7 @@ The first model option is always `Agent Default`. Selecting it means `ma` does n
 
 ## Per-Directory Settings
 
-`ma` stores its active agent folder name, selected model ID, and selected reasoning level in `Path.cwd() / "ma.ini"`. It restores the model and reasoning before initial model construction, then restores the agent after discovery. Its `[history]` section stores the last 10 submitted prompts and slash commands. Missing, malformed, or unavailable settings fall back to normal startup behavior. The central Textual `exit()` path writes the current selections and history, covering `/exit` and the palette Exit command.
+`ma` stores its active agent folder name, selected model ID, selected reasoning level, and optional `maxturns` override in `Path.cwd() / "ma.ini"`. An absent or `agent_default` max-turn value means the active agent's `max_turns` prop is used. Its `[history]` section stores the last 10 submitted prompts and slash commands. Missing or malformed settings fall back to normal startup behavior. The central Textual `exit()` path writes the current selections, override, and history, covering `/exit` and the palette Exit command.
 
 ## Built-In Data Analyst
 
@@ -125,11 +127,33 @@ Pro Analyst keeps a module-level Code Interpreter container ID and creates the c
 
 Pro Analyst's `upload` tool returns the local name, file ID, container ID, byte count, and exact `container_path` reported by the API. The agent instructions require needed local data files to be uploaded before Code Interpreter data analysis, require Code Interpreter Python to use `container_path` directly, and tell the agent to list the Code Interpreter working directory before retrying if a file is not found.
 
+## Built-In Wiki Builder
+
+`agents/wiki-agent/main.py` defines three Agents SDK agents in one streamed run:
+
+1. `WikiBuilder` calls a small `start_wiki(topic)` function tool to reset state, then hands off.
+2. `WikiResearcher` uses web search, host TODO tools, and agent-local source tools. The first handoff resets notes, TODOs, and graph state. Sources are unique by normalized URL and capped at 30.
+3. `WikiConceptualizer` reads all source notes, consolidates concepts, creates directed relations, audits the graph, and exports it.
+
+The Researcher may hand off only after at least one source exists and either all TODOs are complete or the 30-source cap has been reached. Wiki Builder declares `max_turns: 120` so the handoff chain, research tools, and graph tools remain within one UI-visible streamed run. `set_context` applies the selected model and reasoning level to all three agents because the host automatically updates only the root agent.
+
+For educational clarity, the whole Wiki Builder implementation lives in one `main.py` with visibly separated sections for shared state, helpers, research tools, graph tools, export, agents, and host integration. The current topic and graph are simple module-level values: `_topic`, `_concepts`, and `_links`. Tool functions operate on those values and on the host notes/TODO stores directly; there is no additional graph store or workspace class.
+
+Concept IDs are model-selected semantic Unicode slugs: normalized lowercase kebab-case, at most five words and 48 characters. Export rejects an empty graph, then directly replaces `Path.cwd() / "wiki"`. It writes a linked `README.md`, one Markdown page per concept with incoming/outgoing links, and `graph.json` with this public shape:
+
+```json
+{
+  "topic": "Topic",
+  "vertices": [{"id": "concept-slug", "name": "Concept", "description": "Markdown"}],
+  "links": [{"source": "source-slug", "target": "target-slug", "relation": "a-kind-of", "description": "Why"}]
+}
+```
+
 ## UI Lifecycle
 
 The transcript initially mounts a lightweight splash screen and keeps the composer hidden and unfocused. After Textual's first refresh, `ma` starts background initialization for model construction and agent loading, then removes the splash and focuses the composer when startup completes.
 
-The top status line shows the active agent, active model, reasoning level, download mode, and current status. Status values are color-coded: Ready is white, Working is light green, Needs input is blue, and Executing code is yellow.
+The top status line shows the active agent, active model, reasoning level, effective max turns, download mode, and current status. Status values are color-coded: Ready is white, Working is light green, Needs input is blue, and Executing code is yellow.
 
 Modal screens are explicitly centered in Textual CSS so selectors, help, clarification, note detail, and download confirmation appear over the middle of the app.
 
@@ -167,7 +191,7 @@ Stores are in memory for the current chat session. `/notes save` exports notes t
 
 ## Streaming Flow
 
-The UI calls `Runner.run_streamed(active_agent.agent, input_items)`.
+The UI resolves max turns as user override first, then the active agent prop, then the default of 10, and passes the result to `Runner.run_streamed`.
 
 It displays:
 

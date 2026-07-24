@@ -18,7 +18,7 @@ def set_context(context):
     agent.context = context
 
 def get_props():
-    return {"display_name": "Sample Agent", "uses_notes": True, "container_id": getattr(agent, "container_id", None)}
+    return {"display_name": "Sample Agent", "uses_notes": True, "container_id": getattr(agent, "container_id", None), "max_turns": 24}
 """.strip(),
         encoding="utf-8",
     )
@@ -35,6 +35,7 @@ def get_props():
     assert loaded.uses_notes is True
     assert loaded.uses_todo is False
     assert loaded.container_id == "container-1"
+    assert loaded.max_turns == 24
     assert loaded.agent.context == {"ok": True}
 
 
@@ -51,6 +52,7 @@ def test_agent_loader_reload_reads_changed_file(tmp_path):
     main_py.write_text("agent = object()\ndef get_props():\n    return {'display_name': 'Two'}\n", encoding="utf-8")
 
     assert loader.reload("sample").display_name == "Two"
+    assert loader.reload("sample").max_turns == 10
 
 
 def test_agent_loader_discovers_multiple_directories_and_later_wins(tmp_path):
@@ -94,4 +96,18 @@ def test_builtin_pro_analyst_agent_is_discoverable_and_loadable():
 
     assert loaded.display_name == "Pro Analyst"
     assert loaded.uses_todo is True
+    assert loaded.agent is not None
+
+
+def test_builtin_wiki_agent_is_discoverable_and_loadable():
+    loader = AgentLoader("agents")
+
+    assert "wiki-agent" in loader.discover()
+
+    loaded = loader.load("wiki-agent")
+
+    assert loaded.display_name == "Wiki Builder"
+    assert loaded.uses_notes is True
+    assert loaded.uses_todo is True
+    assert loaded.max_turns == 120
     assert loaded.agent is not None

@@ -64,7 +64,7 @@ To start `ma` from any working directory on Windows, put this `ma.bat` file some
 
 Without `--agents-dir`, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also loads agents from `./agents` in the current working directory when that folder exists. Current-directory agents override bundled agents with the same folder name. Use `--agents-dir path1 path2` to replace the default lookup with explicit directories; later directories win for duplicate agent names.
 
-When `ma` exits, it writes the active agent, model, and reasoning choice to `ma.ini` in the current working directory. This file is per project/folder, so local agent and model choices do not leak into other directories. If a saved agent or model is no longer available, `ma` uses its normal startup default.
+When `ma` exits, it writes the active agent, model, reasoning choice, and optional max-turn override to `ma.ini` in the current working directory. This file is per project/folder, so local choices do not leak into other directories. If a saved agent or model is no longer available, `ma` uses its normal startup default.
 
 ## Commands
 
@@ -74,6 +74,9 @@ When `ma` exits, it writes the active agent, model, and reasoning choice to `ma.
 - `/model <model>` switches directly to a model by ID or display name.
 - `/reasoning` opens the reasoning selector for the current model.
 - `/reasoning low`, `/reasoning medium`, and similar direct forms update reasoning without opening the selector.
+- `/maxturns` reports the current effective limit.
+- `/maxturns <positive-number>` overrides the active agent's `max_turns` value for subsequent runs.
+- `/maxturns agent_default` removes the override and returns to the active agent's value.
 - `/theme` opens the centered UI theme selector.
 - `/theme <name>` switches directly to a Textual theme such as `nord`, `gruvbox`, or `textual-dark`.
 - `/download` opens the download-mode selector.
@@ -89,11 +92,11 @@ When `ma` exits, it writes the active agent, model, and reasoning choice to `ma.
 - `/notes clear` clears current notes.
 - `/exit` exits the app.
 
-The command palette exposes the same main app commands: Agent, Model, Reasoning, Theme, Download, New, Help, Reload, Save Session Output, Notes Save, Notes Clear, and Exit. **Save Session Output** puts `/save ` in the composer, ready for a filename.
+The command palette exposes the same main app commands: Agent, Model, Reasoning, Max Turns, Theme, Download, New, Help, Reload, Save Session Output, Notes Save, Notes Clear, and Exit. **Max Turns** puts `/maxturns ` in the composer; **Save Session Output** similarly puts `/save ` there.
 When you type a slash command, `ma` shows possible completions in muted text above the composer. Press Tab to complete the current command prefix, including agent names, model names, and theme names.
 With an empty composer, press Up to recall the newest submitted prompt or command. Continue through older/newer entries with Up/Down until you edit the recalled text; then arrows return to normal cursor navigation. The last 10 entries are saved in the `[history]` section of the current directory's `ma.ini`.
 On startup, `ma` shows a small splash screen while agents and models are initialized in the background. The message composer appears after startup finishes.
-The top status line shows the active agent/model, current reasoning level, and current run status: Ready, Working, Needs input, or Executing code.
+The top status line shows the active agent/model, current reasoning level, effective max turns, and current run status: Ready, Working, Needs input, or Executing code.
 Modal windows such as Help, selection pickers, clarification prompts, and download confirmation appear centered over the app.
 During an active run, press Esc once to show an interrupt warning. Press Esc again within 2 seconds to cancel the current run. The transcript, notes, TODOs, downloaded-file tracking, and partial assistant/reasoning output are preserved.
 
@@ -103,6 +106,27 @@ During an active run, press Esc once to show an interrupt warning. Press Esc aga
 - `deep_research`: a research assistant that uses web search, notes, and TODOs.
 - `data_analyst`: a local-data analyst that can list and inspect files in the current directory, upload selected files to Code Interpreter, run analysis, and return generated files.
 - `pro_analyst`: an advanced local-data analyst with Data Analyst capabilities plus markdown skills, TODO planning, safe local file read/write/edit tools, and allowlisted `cmd`/`bash`/`ssh` command execution.
+- `wiki-agent`: a multi-agent topic researcher and concept-wiki builder.
+
+### Wiki Builder
+
+Select Wiki Builder with `/agent wiki-agent`, then enter a topic such as `History and architecture of transformer language models`.
+
+The run has three visible stages:
+
+1. Wiki Builder hands the topic to the Researcher and clears the current notes, TODOs, and pending concept graph.
+2. The Researcher creates TODO questions, searches the web, and records extended source summaries in Notes. It may add new TODOs as it discovers useful adjacent areas. Research stops when every TODO is complete or 30 unique source URLs have been recorded.
+3. The Conceptualizer reads the notes, merges overlapping ideas, invents useful super-concepts, builds directed relations, and exports the result.
+
+Concept IDs are short semantic Unicode slugs in the concept's own script, for example `machine-learning` or `машинное-обучение`. They are lowercase kebab-case with at most five words and 48 characters. Concept descriptions are Markdown and include inline links to supporting sources.
+
+A successful build replaces the generated `wiki/` directory in the folder where `ma` was launched:
+
+- `wiki/README.md` lists and links all concepts.
+- `wiki/<concept-slug>.md` contains the concept description plus incoming and outgoing links.
+- `wiki/graph.json` contains the raw `topic`, `vertices`, and directed `links` for later visualization.
+
+If research cannot record even one source, no graph is exported and an existing wiki is preserved.
 
 The Data Analyst local filesystem tools are:
 
@@ -181,10 +205,13 @@ def get_props():
         "display_name": "My Agent",
         "uses_notes": True,
         "uses_todo": True,
+        "max_turns": 10,
     }
 ```
 
 Run `/reload` after editing or adding an agent.
+
+`max_turns` is optional and defaults to `10`. It controls the maximum model turns in one streamed run; longer multi-agent or research workflows may declare a larger value.
 
 That `agents/` folder can be either the bundled one in the `ma` project or a project-local `agents/` folder in the directory where you started `ma`. For explicit control, start with `uv run ma --agents-dir my_agents other_agents`.
 

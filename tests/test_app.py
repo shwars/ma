@@ -137,6 +137,7 @@ def test_submit_composer_records_commands_and_prompts(tmp_path):
 
 def test_command_completion_helpers_complete_common_prefix_and_single_match():
     assert complete_command_text("/mo") == "/model"
+    assert complete_command_text("/max") == "/maxturns"
     assert complete_command_text("/n") == "/n"
     assert complete_command_text("/note") == "/notes "
     assert complete_command_text("/notes c") == "/notes clear"
@@ -193,6 +194,7 @@ def test_dynamic_command_completion_includes_agent_and_model(tmp_path):
             assert "/agent sample" in completions
             assert "/agent Sample Agent" in completions
             assert "/model Agent Default" in completions
+            assert "/maxturns agent_default" in completions
             assert "/theme textual-dark" in completions
 
     asyncio.run(run())
@@ -243,6 +245,33 @@ def test_download_command_updates_mode():
     asyncio.run(run())
 
 
+def test_maxturns_command_overrides_and_restores_agent_default():
+    async def run() -> None:
+        async with MaApp(config_path="missing.json").run_test() as pilot:
+            app = pilot.app
+            for _ in range(10):
+                await pilot.pause()
+                if not app.starting:
+                    break
+
+            agent_default = app.active_agent.max_turns
+            assert app.max_turns_override is None
+            assert app.effective_max_turns == agent_default
+
+            await app.handle_command("/maxturns 27")
+            assert app.max_turns_override == 27
+            assert app.effective_max_turns == 27
+
+            await app.handle_command("/maxturns invalid")
+            assert app.max_turns_override == 27
+
+            await app.handle_command("/maxturns agent_default")
+            assert app.max_turns_override is None
+            assert app.effective_max_turns == agent_default
+
+    asyncio.run(run())
+
+
 def test_theme_command_switches_theme_and_opens_picker():
     async def run() -> None:
         async with MaApp(config_path="missing.json").run_test() as pilot:
@@ -275,6 +304,7 @@ def test_palette_has_single_download_command():
             titles = [command.title for command in pilot.app.get_system_commands(pilot.app.screen)]
 
             assert "Download" in titles
+            assert "Max Turns" in titles
             assert "Download Auto" not in titles
             assert "Download Ask" not in titles
             assert "Download Skip" not in titles
@@ -405,6 +435,7 @@ def test_help_command_opens_help_screen():
 
             assert isinstance(pilot.app.screen, HelpScreen)
             assert "/agent [name]" in str(pilot.app.screen.query_one("#help-body", Static).content)
+            assert "/maxturns [n]" in str(pilot.app.screen.query_one("#help-body", Static).content)
 
     asyncio.run(run())
 
@@ -838,6 +869,7 @@ def test_status_header_displays_agent_status_and_metadata():
             assert "● Working" in status.plain
             assert "Agent: Sample" in status.plain
             assert "Reasoning: Agent Default" in status.plain
+            assert "Max turns: Agent Default" in status.plain
             assert any(str(span.style) == "light_green" for span in status.spans)
 
     asyncio.run(run())

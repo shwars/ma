@@ -16,6 +16,7 @@ def test_settings_round_trip_and_default_path(tmp_path):
         agent_name="research",
         model_id="qwen",
         reasoning_level="medium",
+        max_turns=42,
         prompt_history=tuple(["first", "two\nlines", "repeat", "repeat", *[f"item {index}" for index in range(10)]]),
     )
 
@@ -26,9 +27,11 @@ def test_settings_round_trip_and_default_path(tmp_path):
         agent_name="research",
         model_id="qwen",
         reasoning_level="medium",
+        max_turns=42,
         prompt_history=saved.prompt_history[-10:],
     )
     assert "[history]" in path.read_text(encoding="utf-8")
+    assert "maxturns = 42" in path.read_text(encoding="utf-8")
 
 
 def test_missing_and_malformed_settings_use_defaults(tmp_path):
@@ -47,6 +50,10 @@ def test_missing_and_malformed_settings_use_defaults(tmp_path):
     path.write_text("[ma]\nagent = simple\n\n[history]\nitem_bad = ignored\nitem_0 = kept", encoding="utf-8")
 
     assert load_settings(path) == AppSettings(agent_name="simple", prompt_history=("kept",))
+
+    path.write_text("[ma]\nagent = simple\nmaxturns = invalid", encoding="utf-8")
+
+    assert load_settings(path) == AppSettings(agent_name="simple")
 
 
 def test_startup_restores_available_project_settings(tmp_path):
@@ -71,7 +78,7 @@ def test_startup_restores_available_project_settings(tmp_path):
             (agent_dir / "main.py").write_text("agent = object()\n", encoding="utf-8")
 
         path = tmp_path / "ma.ini"
-        save_settings(AppSettings("research", "custom", "medium"), path)
+        save_settings(AppSettings("research", "custom", "medium", 45), path)
 
         async with MaApp(config_path=config_path, agents_dir=agents_dir, settings_file=path).run_test() as pilot:
             for _ in range(10):
@@ -84,6 +91,8 @@ def test_startup_restores_available_project_settings(tmp_path):
             assert pilot.app.selected_model is not None
             assert pilot.app.selected_model.id == "custom"
             assert pilot.app.selected_reasoning_level == "medium"
+            assert pilot.app.max_turns_override == 45
+            assert pilot.app.effective_max_turns == 45
 
     asyncio.run(run())
 
@@ -119,8 +128,9 @@ def test_exit_writes_current_settings(monkeypatch, tmp_path):
     app.active_agent = SimpleNamespace(name="research")
     app.selected_model = SimpleNamespace(id="custom")
     app.reasoning_by_model_id["custom"] = "high"
+    app.max_turns_override = 75
     monkeypatch.setattr(App, "exit", lambda self, result=None, message=None: None)
 
     app.exit()
 
-    assert load_settings(path) == AppSettings("research", "custom", "high")
+    assert load_settings(path) == AppSettings("research", "custom", "high", 75)

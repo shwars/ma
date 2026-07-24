@@ -11,7 +11,7 @@ Mitya's Agent (`ma`) is an educational terminal chat application for learning ho
 - Yandex Cloud OpenAI-compatible model runtime
 - Commands for agent/model selection, reload, and notes
 - Code Interpreter output display with generated-file download controls
-- A top status line showing Ready, Working, Needs input, Executing code, and the active reasoning level
+- A top status line showing Ready, Working, Needs input, Executing code, reasoning, and effective max turns
 - Command palette entries matching the main slash commands
 - Tab completion and muted live hints for slash commands
 - Double-Escape interrupt for cancelling an active agent run
@@ -60,7 +60,7 @@ To start `ma` from any working directory on Windows, put a small `ma.bat` somewh
 
 When no `--agents-dir` is provided, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also checks `./agents` in the current working directory when it exists. Current-directory agents override bundled agents with the same folder name.
 
-`ma` saves the active agent, model, and reasoning choice in `ma.ini` in the directory where it is launched. This keeps startup settings aligned with local agents and configuration. Missing or unavailable saved values fall back to the normal defaults.
+`ma` saves the active agent, model, reasoning choice, and optional max-turn override in `ma.ini` in the directory where it is launched. This keeps startup settings aligned with local agents and configuration. Missing or unavailable saved values fall back to the normal defaults.
 
 ## Run From GitHub
 
@@ -119,6 +119,7 @@ The model selector always includes `Agent Default`. Choosing it means `ma` does 
 - `/agent [name]` selects the active agent, or opens the selector when no name is given.
 - `/model [model]` selects the active model, or opens the selector when no model is given.
 - `/reasoning` selects the reasoning effort for the current model.
+- `/maxturns` reports the effective limit; `/maxturns <positive-number>` overrides the agent limit and `/maxturns agent_default` clears the override.
 - `/theme [name]` selects a Textual UI theme, or opens the centered selector when no theme is given.
 - `/download auto`, `/download ask`, `/download skip` controls Code Interpreter generated-file downloads. Default is `ask`.
 - `/download all` downloads every file from the active agent's exposed Code Interpreter container.
@@ -139,6 +140,7 @@ During an active run, press Esc once to show an interrupt warning. Press Esc aga
 - `deep_research`: a research assistant that uses web search, notes, and TODOs.
 - `data_analyst`: a local-data analyst that can list/inspect local CSV/XLS/XLSX files, upload selected files to Code Interpreter, run analysis, and return generated files.
 - `pro_analyst`: an advanced data analyst with Data Analyst capabilities plus skill loading, TODO planning, safe local file read/write/edit tools, and allowlisted command execution.
+- `wiki-agent`: a streamed multi-agent wiki builder that researches a topic, builds a concept graph, and exports Markdown pages plus `wiki/graph.json`.
 
 For Code Interpreter runs, generated code appears as a collapsed expandable block. Code output/logs are shown in dark green. Files returned by Code Interpreter follow the active `/download` mode. `/download all` is available when the active agent exposes a `container_id` prop.
 If a returned file already exists with the same name, size, and checksum, `ma` treats it as already downloaded instead of writing a suffixed duplicate.
@@ -146,6 +148,14 @@ If a returned file already exists with the same name, size, and checksum, `ma` t
 Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so `/model` and `/reasoning` changes keep uploads and Code Interpreter calls on the same container. Its prompt includes a current skill metadata snapshot, and it is instructed to review that snapshot before exploring data, then call `load_skill(...)` only when applying a relevant skill. Skills live in `skills/<skill_id>/skill.md` under either the current working directory or `agents/pro_analyst/`. Current-directory skills override bundled skills at context-build time. PPTX/DOCX skills generate files inside Code Interpreter, not through local `ma` dependencies.
 
 For Pro Analyst, the `upload` tool returns the exact `container_path` for each uploaded file. Code Interpreter Python should use that value instead of guessing from the local filename. Local data files should always be uploaded before Code Interpreter data analysis begins.
+
+Wiki Builder uses streamed handoffs from its entry agent to a Researcher and then a Conceptualizer. The Researcher keeps its work visible in the notes and TODO panes, stopping when its TODO queue is complete or 30 unique sources have been recorded. The Conceptualizer consolidates the notes into concepts with short semantic Unicode slugs and directed relations. A successful run replaces `wiki/` in the launch directory with:
+
+- `README.md`, containing the linked concept index
+- one Markdown page per concept, including incoming and outgoing links
+- `graph.json`, containing `topic`, `vertices`, and directed `links`
+
+Concept descriptions contain inline links to their supporting sources. Start a new build by selecting `/agent wiki-agent` and entering a topic.
 
 Minimal skill format:
 
@@ -192,8 +202,11 @@ def get_props():
         "display_name": "My Agent",
         "uses_notes": True,
         "uses_todo": True,
+        "max_turns": 10,
     }
 ```
+
+`max_turns` is optional and defaults to `10`. Increase it only for workflows that intentionally need a longer streamed agent/tool loop, such as multi-agent research.
 
 Run `/reload` after adding or editing an agent.
 

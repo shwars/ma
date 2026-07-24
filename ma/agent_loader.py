@@ -33,6 +33,10 @@ class LoadedAgent:
         value = self.props.get("container_id")
         return str(value) if value else None
 
+    @property
+    def max_turns(self) -> int:
+        return int(self.props.get("max_turns", 10))
+
     def set_context(self, context: Any) -> None:
         setter = getattr(self.module, "set_context", None)
         if callable(setter):
@@ -45,6 +49,7 @@ class LoadedAgent:
         self.props.setdefault("display_name", self.name.replace("_", " ").title())
         self.props.setdefault("uses_notes", False)
         self.props.setdefault("uses_todo", False)
+        self.props.setdefault("max_turns", 10)
 
 
 class AgentLoader:

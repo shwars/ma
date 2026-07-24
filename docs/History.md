@@ -1,5 +1,15 @@
 # History
 
+## 2026-07-14
+
+- Added `/maxturns`: a per-directory optional override for the active agent's `max_turns` prop, with `agent_default` reset behavior, status display, command completion, palette access, and `ma.ini` persistence.
+- Simplified Wiki Builder for teaching: collapsed the implementation into one visibly sectioned `main.py`, replaced workspace/dataclass storage with plain module-level concept/link lists, and removed defensive infrastructure that obscured the agent flow.
+- Added the built-in Wiki Builder as a streamed three-agent handoff pipeline: entry agent, web Researcher, and graph Conceptualizer.
+- Added source-note URL deduplication, a strict 30-source cap, research status/pagination tools, and handoff gating based on TODO completion or the source cap.
+- Added agent-local concept graph tools with short semantic Unicode slug validation, relation endpoint checks, concept merging, graph inspection, and snapshot export.
+- Added `wiki/README.md`, per-concept Markdown pages with incoming/outgoing links, and the raw `wiki/graph.json` visualization format.
+- Added optional per-agent `max_turns` props, retaining 10 by default and giving Wiki Builder 120 turns for its streamed research pipeline.
+
 ## 2026-06-28
 
 - Chose Textual for the terminal UI because it naturally supports panes, selectors, inputs, and reactive state.
