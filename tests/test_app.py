@@ -32,7 +32,34 @@ from ma.app import (
     truncate_text,
     write_downloaded_file,
 )
+from ma.config import ModelChoice, agent_default_model
 from ma.stores import TodoItem
+
+
+def test_build_run_config_applies_selected_model_and_reasoning_to_entire_run():
+    app = MaApp(config_path="missing.json")
+    selected_model = ModelChoice("test-model", "Test Model", "gpt://folder/test-model")
+    model = object()
+    app.selected_model = selected_model
+    app.selected_model_object = model
+    app.reasoning_by_model_id[selected_model.id] = "high"
+
+    run_config = app.build_run_config()
+
+    assert run_config.model is model
+    assert run_config.model_settings.reasoning.effort == "high"
+
+
+def test_build_run_config_preserves_agent_defaults():
+    app = MaApp(config_path="missing.json")
+    app.selected_model = agent_default_model()
+    app.selected_model_object = object()
+    app.reasoning_by_model_id[app.selected_model.id] = None
+
+    run_config = app.build_run_config()
+
+    assert run_config.model is None
+    assert run_config.model_settings is None
 
 
 def test_composer_enter_submits_and_ctrl_enter_inserts_newline():

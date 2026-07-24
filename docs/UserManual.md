@@ -48,7 +48,7 @@ Model IDs can use `%folder_id%`, which is replaced at load time:
 }
 ```
 
-The model selector always includes `Agent Default`. Choose it when the agent file should keep its own model instead of having `ma` inject the selected model.
+The model selector always includes `Agent Default`. Choose it when the agent file should keep its own model instead of having `ma` inject the selected model. A model selected in `ma` applies to the complete run, including every agent reached through handoffs, so multi-agent files do not need to copy `context.model` into each subagent.
 
 Start the app:
 

@@ -1,5 +1,10 @@
 # History
 
+## 2026-07-24
+
+- Changed model and explicit reasoning selection to use the Agents SDK run configuration, so the Yandex-backed model applies to root agents and all handoff agents without per-module model assignment.
+- Removed the Wiki Builder's manual subagent model propagation and documented `Agent Default` as the opt-out that preserves agent-defined settings.
+
 ## 2026-07-14
 
 - Added `/maxturns`: a per-directory optional override for the active agent's `max_turns` prop, with `agent_default` reset behavior, status display, command completion, palette access, and `ma.ini` persistence.

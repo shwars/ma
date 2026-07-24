@@ -186,19 +186,15 @@ def test_empty_graph_does_not_replace_existing_wiki(tmp_path):
     assert existing.read_text(encoding="utf-8") == "keep me"
 
 
-def test_set_context_configures_subagents(tmp_path, monkeypatch):
+def test_set_context_configures_multiagent_tools(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     loaded = AgentLoader(AGENTS_DIR).load("wiki-agent")
     context = make_context()
-    context.reasoning_level = "medium"
-
     loaded.set_context(context)
 
     assert loaded.max_turns == 120
     assert len(loaded.agent.handoffs) == 1
     assert len(loaded.module.researcher.handoffs) == 1
-    assert loaded.module.researcher.model_settings.reasoning.effort == "medium"
-    assert loaded.module.conceptualizer.model_settings.reasoning.effort == "medium"
     assert {tool.name for tool in loaded.module.researcher.tools if hasattr(tool, "name")} >= {
         "record_source",
         "research_status",

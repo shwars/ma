@@ -1473,9 +1473,6 @@ class MaApp(App[None]):
         current_reasoning_block: ReasoningBlock | None = None
 
         try:
-            if not use_agent_default:
-                setattr(self.active_agent.agent, "model", self.selected_model_object)
-            self.apply_reasoning_settings()
             run_input = self.history + [{"role": "user", "content": text}]
             assistant_text_parts: list[str] = []
             streamed_reasoning_parts: list[str] = []
@@ -1486,6 +1483,7 @@ class MaApp(App[None]):
                 self.active_agent.agent,
                 run_input,
                 max_turns=self.effective_max_turns,
+                run_config=self.build_run_config(),
             )
             async for stream_event in result.stream_events():
                 if stream_event.type == "raw_response_event" and isinstance(
@@ -1576,21 +1574,20 @@ class MaApp(App[None]):
             self.interrupt_requested = False
             self.set_agent_status("Ready")
 
-    def apply_reasoning_settings(self) -> None:
-        if not self.active_agent or not self.selected_model:
-            return
-        if self.selected_model.id not in self.reasoning_by_model_id:
-            return
+    def build_run_config(self) -> Any:
+        from agents import ModelSettings, RunConfig
 
-        from agents import ModelSettings
+        model = None
+        if self.selected_model and not self.selected_model.is_agent_default:
+            model = self.selected_model_object
 
-        level = self.reasoning_by_model_id[self.selected_model.id]
-        current_settings = getattr(self.active_agent.agent, "model_settings", None) or ModelSettings()
-        new_settings = dataclasses.replace(
-            current_settings,
-            reasoning=None if level is None else {"effort": level},
-        )
-        setattr(self.active_agent.agent, "model_settings", new_settings)
+        model_settings = None
+        if self.selected_model and self.selected_model.id in self.reasoning_by_model_id:
+            level = self.reasoning_by_model_id[self.selected_model.id]
+            if level is not None:
+                model_settings = ModelSettings(reasoning={"effort": level})
+
+        return RunConfig(model=model, model_settings=model_settings)
 
     def describe_run_item(self, item: Any) -> str | None:
         item_type = getattr(item, "type", "")

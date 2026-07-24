@@ -74,9 +74,9 @@ Agents receive an `AgentContext` with:
 
 `client` is the sync OpenAI-compatible Yandex client and `aclient` is the async version. They are created by `ma.runtime` so agents can use direct API features without recreating clients.
 
-Only the root `agent.model` is automatically overridden before a run. If an agent owns subagents, `set_context` should update them.
+Before each run, `ma` passes the selected model through the Agents SDK `RunConfig`. This overrides the model for every agent participating in the run, including agents reached through handoffs. Multi-agent modules do not need to assign `context.model` to each subagent themselves.
 
-When a reasoning level is selected for the current model, `ma` applies it to the root agent's `model_settings.reasoning` before running. `Agent Default` leaves the agent's own reasoning settings untouched.
+When a reasoning level is selected for the current model, `ma` also passes it through the run configuration so it applies across the full handoff workflow. `Agent Default` leaves each agent's own model or reasoning settings untouched.
 
 ## Configuration
 
@@ -135,7 +135,7 @@ Pro Analyst's `upload` tool returns the local name, file ID, container ID, byte 
 2. `WikiResearcher` uses web search, host TODO tools, and agent-local source tools. The first handoff resets notes, TODOs, and graph state. Sources are unique by normalized URL and capped at 30.
 3. `WikiConceptualizer` reads all source notes, consolidates concepts, creates directed relations, audits the graph, and exports it.
 
-The Researcher may hand off only after at least one source exists and either all TODOs are complete or the 30-source cap has been reached. Wiki Builder declares `max_turns: 120` so the handoff chain, research tools, and graph tools remain within one UI-visible streamed run. `set_context` applies the selected model and reasoning level to all three agents because the host automatically updates only the root agent.
+The Researcher may hand off only after at least one source exists and either all TODOs are complete or the 30-source cap has been reached. Wiki Builder declares `max_turns: 120` so the handoff chain, research tools, and graph tools remain within one UI-visible streamed run. The host run configuration applies the selected model and reasoning level to all three agents automatically.
 
 For educational clarity, the whole Wiki Builder implementation lives in one `main.py` with visibly separated sections for shared state, helpers, research tools, graph tools, export, agents, and host integration. The current topic and graph are simple module-level values: `_topic`, `_concepts`, and `_links`. Tool functions operate on those values and on the host notes/TODO stores directly; there is no additional graph store or workspace class.
 
