@@ -2,6 +2,8 @@
 
 Mitya's Agent (`ma`) is an educational terminal chat application for learning how coding and agent chat tools are built. It uses Textual for the UI, OpenAI Agents SDK for agent orchestration, and Yandex Cloud through its OpenAI-compatible API.
 
+![MA Screen](images/ma-screen.png)
+
 ## Features
 
 - Dynamic agents loaded from `agents/<name>/main.py`
