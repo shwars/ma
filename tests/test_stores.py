@@ -26,3 +26,15 @@ def test_todo_store_tracks_next_item():
     assert store.get_next().title == "first"
     store.mark_done(0)
     assert store.get_next().title == "second"
+
+
+def test_todo_store_reuses_exact_duplicate_item():
+    store = TodoStore()
+    original = store.create_todo("Research APIs")
+    store.mark_done(0)
+
+    duplicate = store.create_todo("Research APIs", position=0)
+
+    assert duplicate is original
+    assert duplicate.done is True
+    assert store.items == [original]

@@ -217,6 +217,8 @@ That `agents/` folder can be either the bundled one in the `ma` project or a pro
 
 The notes tool accepts `extra` as optional text metadata. Use JSON text there if you want to preserve several custom fields in one note.
 
+The TODO tool does not add an exact duplicate title. It returns an `already exists` message and keeps the original TODO item, including its current completion state.
+
 `context.client` and `context.aclient` provide sync and async OpenAI-compatible Yandex clients for agents that need direct API access, such as creating Code Interpreter containers or uploading files.
 
 `context.log(message)` displays a light-green message in the transcript. It is a Python callback for agent code, not a model-callable tool by default.

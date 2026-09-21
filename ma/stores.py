@@ -78,7 +78,14 @@ class TodoStore:
     def __init__(self) -> None:
         self.items: list[TodoItem] = []
 
+    def find_todo(self, title: str) -> TodoItem | None:
+        return next((item for item in self.items if item.title == title), None)
+
     def create_todo(self, title: str, position: int | None = None) -> TodoItem:
+        existing = self.find_todo(title)
+        if existing is not None:
+            return existing
+
         item = TodoItem(title=title)
         if position is None or position < 0 or position >= len(self.items):
             self.items.append(item)

@@ -4,7 +4,13 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from ma.tools import ClarificationOption, build_clarification_tools, normalize_clarification_options
+from ma.stores import TodoStore
+from ma.tools import (
+    ClarificationOption,
+    build_clarification_tools,
+    build_todo_tools,
+    normalize_clarification_options,
+)
 
 
 def test_normalize_clarification_options_accepts_models_and_dicts():
@@ -63,5 +69,27 @@ def test_clarification_tool_handles_missing_options_without_custom_answer():
             "title": "No options",
             "detail": "The agent did not provide clarification options.",
         }
+
+    asyncio.run(run())
+
+
+def test_create_todo_tool_reports_exact_duplicate():
+    async def run() -> None:
+        store = TodoStore()
+        tool = build_todo_tools(store)[0]
+        context = SimpleNamespace(tool_name=tool.name, run_config=None)
+
+        created = await tool.on_invoke_tool(
+            context,
+            json.dumps({"title": "Research APIs", "position": None}),
+        )
+        duplicate = await tool.on_invoke_tool(
+            context,
+            json.dumps({"title": "Research APIs", "position": 0}),
+        )
+
+        assert created == "Created TODO 'Research APIs'."
+        assert duplicate == "TODO item 'Research APIs' already exists."
+        assert [item.title for item in store.items] == ["Research APIs"]
 
     asyncio.run(run())

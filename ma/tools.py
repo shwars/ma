@@ -58,6 +58,8 @@ def build_todo_tools(store: TodoStore) -> list[Any]:
     @function_tool
     def create_todo(title: str, position: int | None = None) -> str:
         """Create a TODO item at the given zero-based position, or append it."""
+        if store.find_todo(title) is not None:
+            return f"TODO item '{title}' already exists."
         item = store.create_todo(title=title, position=position)
         return f"Created TODO '{item.title}'."
 

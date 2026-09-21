@@ -4,6 +4,7 @@
 
 - Changed model and explicit reasoning selection to use the Agents SDK run configuration, so the Yandex-backed model applies to root agents and all handoff agents without per-module model assignment.
 - Removed the Wiki Builder's manual subagent model propagation and documented `Agent Default` as the opt-out that preserves agent-defined settings.
+- Prevented exact duplicate TODO titles from being inserted and made the TODO tool report the existing item instead.
 
 ## 2026-07-14
 

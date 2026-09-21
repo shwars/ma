@@ -177,6 +177,8 @@ TODO tools:
 - `mark_todo_done(index)`
 - `get_next_todo()`
 
+`create_todo` uses exact, case-sensitive title matching. If the same title already exists, including as a completed item, the store keeps the existing item and the tool reports that the TODO already exists.
+
 Clarification tools:
 
 - `ask_user_clarification(question, options, allow_custom_answer=False)`

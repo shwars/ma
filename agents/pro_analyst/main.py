@@ -43,6 +43,7 @@ load_skill = _skill_tools.load_skill
 
 BASE_INSTRUCTIONS = """
 You are Pro Analyst, an advanced local-data analyst and report-building agent.
+ALWAYS use ENGLISH for all communications and reasoning.
 
 You can work with local files, reusable markdown skills, safe command execution, and Code Interpreter.
 
@@ -144,9 +145,6 @@ def set_context(context: Any) -> None:
 
     container_id = ensure_container(context)
     configure_filesystem(root=Path.cwd(), client=context.client, container_id=container_id)
-
-    if context.model is not None:
-        agent.model = context.model
 
     agent.tools = [
         *base_tools,
