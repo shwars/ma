@@ -5,6 +5,7 @@
 - Changed startup model restoration so missing, unavailable, and wrong-folder `ma.ini` model selections resolve to `Agent Default` instead of whichever API model happens to be listed first.
 - Kept valid current-folder model and reasoning selections restorable while preventing stale reasoning from following an invalid saved model.
 - Changed Data Analyst to reuse its Code Interpreter container across model and reasoning context updates, recreating it only when the host client changes or the agent module is reloaded.
+- Removed the unnecessary `<2.45` cap from the direct `openai` dependency so `ma` can coexist with software using newer compatible clients; `openai-agents` now supplies the compatibility ceiling.
 
 ## 2026-07-24
 

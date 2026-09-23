@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from types import SimpleNamespace
+
+from agents.tool_context import ToolContext
 
 from ma.stores import TodoStore
 from ma.tools import (
@@ -35,16 +36,22 @@ def test_clarification_tool_calls_async_asker_with_options():
             return options[0]
 
         tool = build_clarification_tools(ask)[0]
-        context = SimpleNamespace(tool_name=tool.name, run_config=None)
+        arguments = json.dumps(
+            {
+                "question": "Choose path",
+                "options": [{"title": "Fast", "detail": "Move quickly"}],
+                "allow_custom_answer": True,
+            }
+        )
+        context = ToolContext(
+            context=None,
+            tool_name=tool.name,
+            tool_call_id="clarification-call",
+            tool_arguments=arguments,
+        )
         result = await tool.on_invoke_tool(
             context,
-            json.dumps(
-                {
-                    "question": "Choose path",
-                    "options": [{"title": "Fast", "detail": "Move quickly"}],
-                    "allow_custom_answer": True,
-                }
-            ),
+            arguments,
         )
 
         assert calls == [("Choose path", [{"title": "Fast", "detail": "Move quickly"}], True)]
@@ -59,10 +66,18 @@ def test_clarification_tool_handles_missing_options_without_custom_answer():
             raise AssertionError("asker should not be called without options or custom answers")
 
         tool = build_clarification_tools(ask)[0]
-        context = SimpleNamespace(tool_name=tool.name, run_config=None)
+        arguments = json.dumps(
+            {"question": "Choose path", "options": [], "allow_custom_answer": False}
+        )
+        context = ToolContext(
+            context=None,
+            tool_name=tool.name,
+            tool_call_id="clarification-call",
+            tool_arguments=arguments,
+        )
         result = await tool.on_invoke_tool(
             context,
-            json.dumps({"question": "Choose path", "options": [], "allow_custom_answer": False}),
+            arguments,
         )
 
         assert result == {
@@ -77,15 +92,26 @@ def test_create_todo_tool_reports_exact_duplicate():
     async def run() -> None:
         store = TodoStore()
         tool = build_todo_tools(store)[0]
-        context = SimpleNamespace(tool_name=tool.name, run_config=None)
+        create_arguments = json.dumps({"title": "Research APIs", "position": None})
+        duplicate_arguments = json.dumps({"title": "Research APIs", "position": 0})
 
         created = await tool.on_invoke_tool(
-            context,
-            json.dumps({"title": "Research APIs", "position": None}),
+            ToolContext(
+                context=None,
+                tool_name=tool.name,
+                tool_call_id="create-todo-call",
+                tool_arguments=create_arguments,
+            ),
+            create_arguments,
         )
         duplicate = await tool.on_invoke_tool(
-            context,
-            json.dumps({"title": "Research APIs", "position": 0}),
+            ToolContext(
+                context=None,
+                tool_name=tool.name,
+                tool_call_id="duplicate-todo-call",
+                tool_arguments=duplicate_arguments,
+            ),
+            duplicate_arguments,
         )
 
         assert created == "Created TODO 'Research APIs'."
