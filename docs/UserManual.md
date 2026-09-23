@@ -64,7 +64,7 @@ To start `ma` from any working directory on Windows, put this `ma.bat` file some
 
 Without `--agents-dir`, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also loads agents from `./agents` in the current working directory when that folder exists. Current-directory agents override bundled agents with the same folder name. Use `--agents-dir path1 path2` to replace the default lookup with explicit directories; later directories win for duplicate agent names.
 
-When `ma` exits, it writes the active agent, model, reasoning choice, and optional max-turn override to `ma.ini` in the current working directory. This file is per project/folder, so local choices do not leak into other directories. If a saved agent or model is no longer available, `ma` uses its normal startup default.
+When `ma` exits, it writes the active agent, model, reasoning choice, and optional max-turn override to `ma.ini` in the current working directory. This file is per project/folder, so local choices do not leak into other directories. If no model is saved, or the saved model is unavailable or belongs to a different Yandex folder, `ma` selects `Agent Default` and does not inject a model. Valid saved models and their reasoning choices are restored normally.
 
 ## Commands
 
@@ -144,6 +144,8 @@ Pro Analyst adds:
 - `execute_command(command, args=None, timeout_seconds=60)`: run only `cmd`, `bash`, or `ssh`.
 
 Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so changing `/model` or `/reasoning` does not create a new container. Uploads and Code Interpreter calls are kept on that same container. Its prompt includes a current skill metadata snapshot, and the agent is instructed to review that snapshot before exploring data, then call `load_skill(...)` only when applying a relevant skill. It should not reload skill metadata during normal execution. Pro Analyst also uses TODO tools for visible multi-step planning.
+
+Data Analyst follows the same container rule: changing `/model` or `/reasoning` reconfigures the agent while retaining its current container. A new container is created when the host client changes or the agent module is reloaded.
 
 When Pro Analyst uploads files, the upload result includes `container_path`. Code Interpreter Python must use that exact path instead of assuming the local filename is visible in the container. Needed local data files should always be uploaded before Code Interpreter data analysis starts.
 

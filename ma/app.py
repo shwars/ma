@@ -850,16 +850,27 @@ class MaApp(App[None]):
         self.interrupt_requested = False
 
     def _initial_model_choice(self) -> ModelChoice | None:
+        agent_default = next(
+            (model for model in self.config.models if model.is_agent_default),
+            None,
+        )
         if self.saved_settings.model_id:
             saved_model = next(
                 (model for model in self.config.models if model.id == self.saved_settings.model_id),
                 None,
             )
-            if saved_model is not None:
+            if saved_model is not None and self._model_matches_current_folder(saved_model):
                 return saved_model
-        return next(
-            (model for model in self.config.models if not model.is_agent_default),
-            self.config.models[0] if self.config.models else None,
+        return agent_default
+
+    def _model_matches_current_folder(self, model: ModelChoice) -> bool:
+        if model.is_agent_default:
+            return True
+        expected_prefix = f"gpt://{self.config.folder_id}/"
+        return bool(
+            self.config.folder_id
+            and model.model_uri
+            and model.model_uri.startswith(expected_prefix)
         )
 
     def _restore_reasoning_setting(self) -> None:

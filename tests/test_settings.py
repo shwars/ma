@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from textual.app import App
 
 from ma.app import MaApp
+from ma.config import AGENT_DEFAULT_MODEL_ID
 from ma.settings import AppSettings, load_settings, save_settings, settings_path
 
 
@@ -97,6 +98,31 @@ def test_startup_restores_available_project_settings(tmp_path):
     asyncio.run(run())
 
 
+def test_startup_without_settings_uses_agent_default(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "folder_id": "folder",
+                "api_key": "key",
+                "models": [
+                    {"id": "custom", "model_id": "gpt://folder/custom/latest"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    app = MaApp(config_path=config_path, settings_file=tmp_path / "missing.ini")
+
+    assert app.selected_model is not None
+    assert app.selected_model.id == AGENT_DEFAULT_MODEL_ID
+    assert app.selected_reasoning_level is None
+    run_config = app.build_run_config()
+    assert run_config.model is None
+    assert run_config.model_settings is None
+
+
 def test_unavailable_project_settings_fall_back_to_defaults(tmp_path):
     async def run() -> None:
         agents_dir = tmp_path / "agents"
@@ -116,10 +142,38 @@ def test_unavailable_project_settings_fall_back_to_defaults(tmp_path):
             assert pilot.app.active_agent is not None
             assert pilot.app.active_agent.name == "simple"
             assert pilot.app.selected_model is not None
-            assert pilot.app.selected_model.id != "missing-model"
+            assert pilot.app.selected_model.id == AGENT_DEFAULT_MODEL_ID
             assert pilot.app.selected_reasoning_level is None
 
     asyncio.run(run())
+
+
+def test_wrong_folder_saved_model_falls_back_to_agent_default(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "folder_id": "current-folder",
+                "api_key": "key",
+                "models": [
+                    {"id": "custom", "model_id": "gpt://old-folder/custom/latest"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    path = tmp_path / "ma.ini"
+    save_settings(AppSettings(model_id="custom", reasoning_level="high"), path)
+
+    app = MaApp(config_path=config_path, settings_file=path)
+
+    assert app.selected_model is not None
+    assert app.selected_model.id == AGENT_DEFAULT_MODEL_ID
+    assert app.selected_reasoning_level is None
+    app.save_current_settings()
+    normalized = load_settings(path)
+    assert normalized.model_id == AGENT_DEFAULT_MODEL_ID
+    assert normalized.reasoning_level == "agent_default"
 
 
 def test_exit_writes_current_settings(monkeypatch, tmp_path):

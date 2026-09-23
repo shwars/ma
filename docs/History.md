@@ -1,5 +1,11 @@
 # History
 
+## 2026-09-23
+
+- Changed startup model restoration so missing, unavailable, and wrong-folder `ma.ini` model selections resolve to `Agent Default` instead of whichever API model happens to be listed first.
+- Kept valid current-folder model and reasoning selections restorable while preventing stale reasoning from following an invalid saved model.
+- Changed Data Analyst to reuse its Code Interpreter container across model and reasoning context updates, recreating it only when the host client changes or the agent module is reloaded.
+
 ## 2026-07-24
 
 - Changed model and explicit reasoning selection to use the Agents SDK run configuration, so the Yandex-backed model applies to root agents and all handoff agents without per-module model assignment.

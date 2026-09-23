@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from ma.agent_loader import AgentLoader
+
 
 def load_filesystem_tools():
     path = Path("agents/data_analyst/filesystem_tools.py").resolve()
@@ -13,6 +15,10 @@ def load_filesystem_tools():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_data_analyst_main():
+    return AgentLoader("agents").load("data_analyst").module
 
 
 def test_ls_filters_files_and_rejects_unsafe_masks(tmp_path):
@@ -81,3 +87,89 @@ def test_upload_uses_configured_container_client(tmp_path):
 
     assert calls == [("container-1", "data.csv")]
     assert result == {"files": [{"name": "data.csv", "id": "file-data"}]}
+
+
+def test_data_analyst_reuses_container_for_context_updates(tmp_path):
+    main = load_data_analyst_main()
+    (tmp_path / "data.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    created: list[str] = []
+    uploads: list[tuple[str, str]] = []
+
+    class Files:
+        @staticmethod
+        def create(container_id, file):
+            uploads.append((container_id, Path(file.name).name))
+            return SimpleNamespace(id="file-data")
+
+    class Containers:
+        files = Files()
+
+        @staticmethod
+        def create(name):
+            created.append(name)
+            return SimpleNamespace(id="container-1")
+
+    context = SimpleNamespace(
+        client=SimpleNamespace(containers=Containers()),
+        model=None,
+        clarification_tools=[],
+        log=lambda message: None,
+    )
+
+    main.configure(root=tmp_path)
+    main.set_context(context)
+    main.set_context(context)
+    result = json.loads(main.configure.__globals__["upload_files"](["data.csv"]))
+
+    assert created == ["ma-data-analysis"]
+    assert main.get_props()["container_id"] == "container-1"
+    assert uploads == [("container-1", "data.csv")]
+    assert result == {"files": [{"name": "data.csv", "id": "file-data"}]}
+    code_tools = [
+        tool
+        for tool in main.agent.tools
+        if getattr(tool, "tool_config", {}).get("type") == "code_interpreter"
+    ]
+    assert code_tools[-1].tool_config["container"] == "container-1"
+
+
+def test_data_analyst_recreates_container_when_client_changes():
+    main = load_data_analyst_main()
+    created: list[tuple[str, str]] = []
+
+    class Containers:
+        def __init__(self, container_id: str) -> None:
+            self.container_id = container_id
+
+        def create(self, name):
+            created.append((self.container_id, name))
+            return SimpleNamespace(id=self.container_id)
+
+    first_context = SimpleNamespace(
+        client=SimpleNamespace(containers=Containers("container-1")),
+        model=None,
+        clarification_tools=[],
+        log=lambda message: None,
+    )
+    second_context = SimpleNamespace(
+        client=SimpleNamespace(containers=Containers("container-2")),
+        model=None,
+        clarification_tools=[],
+        log=lambda message: None,
+    )
+
+    main.set_context(first_context)
+    main.set_context(first_context)
+    main.set_context(second_context)
+
+    assert created == [
+        ("container-1", "ma-data-analysis"),
+        ("container-2", "ma-data-analysis"),
+    ]
+    assert main.get_props()["container_id"] == "container-2"
+    code_tools = [
+        tool
+        for tool in main.agent.tools
+        if getattr(tool, "tool_config", {}).get("type") == "code_interpreter"
+    ]
+    assert code_tools[-1].tool_config["container"] == "container-2"

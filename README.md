@@ -62,7 +62,7 @@ To start `ma` from any working directory on Windows, put a small `ma.bat` somewh
 
 When no `--agents-dir` is provided, `ma` loads bundled agents from `<path_to_ma_dir>/agents` and also checks `./agents` in the current working directory when it exists. Current-directory agents override bundled agents with the same folder name.
 
-`ma` saves the active agent, model, reasoning choice, and optional max-turn override in `ma.ini` in the directory where it is launched. This keeps startup settings aligned with local agents and configuration. Missing or unavailable saved values fall back to the normal defaults.
+`ma` saves the active agent, model, reasoning choice, and optional max-turn override in `ma.ini` in the directory where it is launched. This keeps startup settings aligned with local agents and configuration. When no model is saved, or a saved model is unavailable or belongs to a different Yandex folder, startup selects `Agent Default` and does not inject a model. Valid current-folder model and reasoning selections are restored.
 
 ## Run From GitHub
 
@@ -148,6 +148,8 @@ For Code Interpreter runs, generated code appears as a collapsed expandable bloc
 If a returned file already exists with the same name, size, and checksum, `ma` treats it as already downloaded instead of writing a suffixed duplicate.
 
 Pro Analyst reuses one Code Interpreter container while its agent module remains loaded, so `/model` and `/reasoning` changes keep uploads and Code Interpreter calls on the same container. Its prompt includes a current skill metadata snapshot, and it is instructed to review that snapshot before exploring data, then call `load_skill(...)` only when applying a relevant skill. Skills live in `skills/<skill_id>/skill.md` under either the current working directory or `agents/pro_analyst/`. Current-directory skills override bundled skills at context-build time. PPTX/DOCX skills generate files inside Code Interpreter, not through local `ma` dependencies.
+
+Data Analyst also reuses its Code Interpreter container while its module and host client remain unchanged, so `/model` and `/reasoning` changes do not discard uploaded files. Reloading the agent or changing the host client may create a new container.
 
 For Pro Analyst, the `upload` tool returns the exact `container_path` for each uploaded file. Code Interpreter Python should use that value instead of guessing from the local filename. Local data files should always be uploaded before Code Interpreter data analysis begins.
 

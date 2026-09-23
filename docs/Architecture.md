@@ -100,6 +100,8 @@ The first model option is always `Agent Default`. Selecting it means `ma` does n
 
 `ma` stores its active agent folder name, selected model ID, selected reasoning level, and optional `maxturns` override in `Path.cwd() / "ma.ini"`. An absent or `agent_default` max-turn value means the active agent's `max_turns` prop is used. Its `[history]` section stores the last 10 submitted prompts and slash commands. Missing or malformed settings fall back to normal startup behavior. The central Textual `exit()` path writes the current selections, override, and history, covering `/exit` and the palette Exit command.
 
+Startup restores a concrete saved model only when it is still present in the current model list and its URI starts with `gpt://<current-folder-id>/`. With no saved model, an unavailable model, or a model belonging to another folder, `ma` selects `Agent Default`, clears the stale reasoning selection, and does not inject a model into the run. The normalized selection is written to `ma.ini` on normal exit.
+
 ## Built-In Data Analyst
 
 `agents/data_analyst/main.py` creates a Code Interpreter container using `context.client` during `set_context`. It configures reusable tools from `filesystem_tools.py`:
@@ -109,6 +111,8 @@ The first model option is always `Agent Default`. Selecting it means `ma` does n
 - `upload(filenames)`
 
 The tools are rooted at `Path.cwd()`, reject absolute paths and `..`, and inspect CSV/XLS/XLSX files with pandas. The `upload` tool copies selected local files into the active Code Interpreter container. The agent instructions require all produced files to be returned in the final answer.
+
+Data Analyst keeps its Code Interpreter container ID at module level. Model and reasoning changes rebuild its tool list against the same container while the host sync client is unchanged; a changed client creates a new matching container. Reloading the agent module may also create a new container.
 
 ## Built-In Pro Analyst
 
